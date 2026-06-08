@@ -101,6 +101,22 @@ def create_profile(
     return config_path
 
 
+def ensure_default_compose_dir(profile_name: str) -> str | None:
+    """Записать стандартную compose-директорию, если в профиле она ещё не задана."""
+    config_path = profile_config_path(profile_name)
+    if not config_path.exists():
+        return None
+    with config_path.open(encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    existing = str((raw.get("docker") or {}).get("compose_dir") or "").strip()
+    if existing:
+        return existing
+    from packages.kb.indexer.docker_compose import default_compose_dir
+
+    target = save_compose_dir(profile_name, default_compose_dir(profile_name))
+    return str(target)
+
+
 def save_compose_dir(profile_name: str, compose_dir: str | Path) -> Path:
     config_path = profile_config_path(profile_name)
     if not config_path.exists():

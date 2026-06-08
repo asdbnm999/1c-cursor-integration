@@ -90,6 +90,14 @@ def _profile_summary(name: str) -> dict:
         chunks = count_chunks(config)
     except Exception:
         pass
+    if chunks > 0 and not (config.docker.compose_dir or "").strip():
+        try:
+            from packages.kb.indexer.profile_ops import ensure_default_compose_dir
+
+            ensure_default_compose_dir(name)
+            config = load_config(name)
+        except Exception:
+            pass
     try:
         scan = scan_profile(config)
         file_count = len(scan)
@@ -641,6 +649,10 @@ def api_docker_start(name: str):
     if not compose_dir:
         config = load_config(name)
         compose_dir = config.docker.compose_dir
+    if not compose_dir:
+        from packages.kb.indexer.profile_ops import ensure_default_compose_dir
+
+        compose_dir = ensure_default_compose_dir(name) or ""
     if not compose_dir:
         return jsonify({
             "ok": False,

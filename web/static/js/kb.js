@@ -643,9 +643,15 @@ function showJob(job, chunks = null) {
     }
     stopJobStream();
     loadProfileHealth(window.__profileName);
+    if (window.__profileName) {
+      refreshProfile(window.__profileName).catch(() => {});
+    }
   } else if (job.status === "failed" || job.status === "cancelled") {
     setStepState("index", "error", job.status === "cancelled" ? "Отменено" : "Ошибка");
     stopJobStream();
+    if (window.__profileName) {
+      refreshProfile(window.__profileName).catch(() => {});
+    }
   } else {
     stopJobStream();
   }
@@ -655,13 +661,6 @@ async function pollJob(jobId) {
   try {
     const { job } = await api("/kb/api/jobs/" + jobId);
     showJob(job);
-    if (
-      job.status === "completed" ||
-      job.status === "failed" ||
-      job.status === "cancelled"
-    ) {
-      if (window.__profileName) await refreshProfile(window.__profileName);
-    }
   } catch (_) {}
 }
 
@@ -1432,10 +1431,14 @@ function initProfilePage(name) {
     }
     try {
       const p = await api("/kb/api/profiles/" + name);
-      const composeDir = p.docker?.compose_dir || savedComposeDir;
+      let composeDir = p.docker?.compose_dir || savedComposeDir;
       if (!composeDir) {
-        alert("Сначала укажите папку compose — «Стандартная папка» или «Выбрать директорию compose…»");
-        return;
+        const saved = await api("/kb/api/profiles/" + name + "/docker/compose-dir", {
+          method: "PUT",
+          body: JSON.stringify({ use_default: true }),
+        });
+        composeDir = saved.compose_dir;
+        updateComposeDirDisplay({ compose_dir: composeDir });
       }
       setStepState("docker", "active", "Запуск…");
       const rebuild = el("docker-rebuild")?.checked || false;

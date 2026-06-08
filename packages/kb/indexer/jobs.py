@@ -243,6 +243,14 @@ def _run_job(job: IndexJob) -> None:
         job.status = JobStatus.COMPLETED
         job.stats = stats
         job.progress = stats.get("progress", job.progress)
+        chunks = int(stats.get("chunks_in_collection") or stats.get("chunks") or 0)
+        if chunks > 0:
+            try:
+                from packages.kb.indexer.profile_ops import ensure_default_compose_dir
+
+                ensure_default_compose_dir(job.profile_name)
+            except Exception:
+                pass
     except IndexJobCancelledError as exc:
         job.status = JobStatus.CANCELLED
         job.error = str(exc)
