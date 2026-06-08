@@ -224,6 +224,12 @@ h2 {
   resize: vertical;
 }
 
+.log-selectable {
+  user-select: text;
+  cursor: text;
+  margin: 0;
+}
+
 .log-scroll:focus {
   outline: none;
   border-color: rgba(77, 201, 255, 0.35);
@@ -766,6 +772,17 @@ input[type="file"]::file-selector-button {
 
 .docker-log-details[open] summary {
   margin-bottom: 0.65rem;
+}
+
+.docker-log-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.docker-log-toolbar .btn-sm {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.65rem;
 }
 
 .docker-log--running:not([open]) summary {

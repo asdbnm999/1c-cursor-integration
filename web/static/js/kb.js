@@ -770,6 +770,16 @@ async function saveComposeDirectory(profileName, composeDir) {
   return data.compose_dir;
 }
 
+function dockerLogHasActiveSelection(box) {
+  if (!box) return false;
+  if (document.activeElement === box) return true;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed) return false;
+  const anchor = sel.anchorNode;
+  const focus = sel.focusNode;
+  return (anchor && box.contains(anchor)) || (focus && box.contains(focus));
+}
+
 function renderDockerLogBox(state, { autoscroll = true } = {}) {
   const box = el("docker-status");
   if (!box) return;
@@ -820,7 +830,15 @@ function renderDockerLogBox(state, { autoscroll = true } = {}) {
     );
   }
 
-  box.textContent = lines.join("\n");
+  const newText = lines.join("\n");
+  if (dockerLogHasActiveSelection(box)) {
+    box.dataset.pendingLog = newText;
+  } else {
+    if (box.dataset.pendingLog) delete box.dataset.pendingLog;
+    if (box.textContent !== newText) {
+      box.textContent = newText;
+    }
+  }
 
   if (autoscroll && (wasAtBottom || state.status === "building")) {
     box.scrollTop = box.scrollHeight;
@@ -1215,6 +1233,33 @@ function initProfilePage(name) {
 
   el("docker-log-wrap")?.addEventListener("toggle", () => {
     dockerLogUserToggled = true;
+  });
+
+  el("btn-docker-log-copy")?.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const box = el("docker-status");
+    const text = (box?.dataset.pendingLog || box?.textContent || "").trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const btn = el("btn-docker-log-copy");
+      if (btn) {
+        const prev = btn.textContent;
+        btn.textContent = "Скопировано";
+        setTimeout(() => {
+          btn.textContent = prev;
+        }, 1500);
+      }
+    } catch (_) {
+      const range = document.createRange();
+      range.selectNodeContents(box);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      document.execCommand("copy");
+      sel?.removeAllRanges();
+    }
   });
 
   const dialogSettings = el("dialog-index-settings");

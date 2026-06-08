@@ -14,15 +14,16 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Отдельный слой: кэшируется; editable install не качает build-deps заново.
-RUN pip install --no-cache-dir --upgrade pip "setuptools>=68" wheel
+# Отдельный слой: кэшируется. setuptools/wheel уже в образе — editable install без isolated build.
+RUN pip install --no-cache-dir --upgrade pip "setuptools>=68" wheel certifi
 
 COPY pyproject.toml README.md ./
 COPY packages ./packages
 
-RUN pip install --no-cache-dir -e ".[kb]"
+RUN pip install --no-cache-dir --no-build-isolation -e ".[kb]"
 
 ENV HF_HOME=/app/data/hf_cache
 ENV PYTHONUNBUFFERED=1

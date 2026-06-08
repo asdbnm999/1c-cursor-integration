@@ -79,7 +79,10 @@
   <div id="docker-runtime" class="runtime-line"></div>
   <details id="docker-log-wrap" class="docker-log-details">
     <summary id="docker-log-summary">Лог Docker</summary>
-    <div id="docker-status" class="log log-scroll" tabindex="0" role="log">Статус Docker…</div>
+    <div class="docker-log-toolbar">
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-docker-log-copy">Копировать лог</button>
+    </div>
+    <pre id="docker-status" class="log log-scroll log-selectable" tabindex="0" spellcheck="false">Статус Docker…</pre>
   </details>
 </section>
 
