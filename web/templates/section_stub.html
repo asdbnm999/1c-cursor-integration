@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} — 1C:Cursor{% endblock %}
+{% block subtitle %}{{ page_subtitle }}{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h1>{{ page_title }}</h1>
+    <span class="card-badge status-{{ section_status }}">{{ section_status_label }}</span>
+  </div>
+  <p class="hint">{{ section_description }}</p>
+  <div class="stub-banner">
+    <p>Раздел в разработке. Каркас маршрута <code>{{ request.path }}</code> готов.</p>
+    <p>Следующие шаги плана: см. <code>1C-Cursor-план-разработки.md</code> на рабочем столе.</p>
+  </div>
+  <p class="hint">
+    Документация (skeleton): <code>{{ doc_link }}</code>
+  </p>
+</section>
+{% endblock %}

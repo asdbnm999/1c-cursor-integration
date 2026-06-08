@@ -1,0 +1,41 @@
+# Runtime data (settings, MCP backups, indexes, exports)
+data/*
+!data/.gitkeep
+!data/settings.json.example
+!data/cursor-settings.json.example
+
+# User KB profiles (only _template is published)
+profiles/*
+!profiles/_template/
+!profiles/_template/**
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# ML / indexes
+data/hf_cache/
+data/profiles/
+*.chroma
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Docker generated (user machine)
+# compose dirs live under ~/DockerMCP by default
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/

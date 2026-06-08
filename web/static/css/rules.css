@@ -1,0 +1,440 @@
+/* §4 Rules — workflow UI */
+
+:root {
+  --rules-font: calc(var(--font-sm) + 0.125rem);
+  --rules-font-lg: calc(var(--font-lg) + 0.15rem);
+}
+
+.workflow-step {
+  transition: opacity 0.2s, border-color 0.2s;
+}
+
+.workflow-step--locked {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.workflow-step--locked .step-badge {
+  opacity: 0.8;
+}
+
+.workflow-step.step-ready {
+  border-color: rgba(61, 214, 140, 0.45);
+  box-shadow: 0 0 20px rgba(61, 214, 140, 0.12);
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.step-header h2 {
+  margin: 0;
+  font-size: var(--rules-font-lg);
+}
+
+.step-badge {
+  font-size: calc(var(--rules-font) - 0.125rem);
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.step-badge.success {
+  color: var(--ok);
+  border-color: rgba(61, 214, 140, 0.5);
+}
+
+.field-row {
+  margin-bottom: 1rem;
+}
+
+.field-inline {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.field-inline .input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.field-row .label,
+.field-block .label {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: var(--text);
+  font-size: var(--rules-font);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.input,
+.select,
+.textarea-manual {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--rules-font);
+  line-height: 1.45;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.input,
+.textarea-manual {
+  background: rgba(6, 10, 18, 0.92);
+}
+
+/* Визуал select — глобально в app.css; здесь только размер §4 */
+.select {
+  font-size: var(--rules-font);
+}
+
+.input:focus,
+.textarea-manual:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--neon-cyan);
+}
+
+.workflow-step .btn,
+.field-inline .btn,
+.modal__footer .btn {
+  min-height: 3rem;
+  padding: 0.65rem 1.35rem;
+  border-radius: 10px;
+  font-size: var(--rules-font);
+}
+
+.input--readonly {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.fields-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.field-block--hidden {
+  display: none !important;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: var(--rules-font);
+  min-height: 2.25rem;
+}
+
+.textarea-manual {
+  min-height: 5rem;
+  margin-top: 0.5rem;
+}
+
+.warning-box {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(255, 200, 87, 0.12);
+  color: var(--warn);
+  font-size: var(--rules-font);
+}
+
+.warning-box--hidden {
+  display: none;
+}
+
+.section-divider {
+  margin: 1.25rem 0 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.section-divider h3 {
+  margin: 0;
+  font-size: var(--rules-font-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.advanced-rules-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.advanced-summary {
+  color: var(--muted);
+  font-size: var(--rules-font);
+}
+
+.output {
+  margin-top: 1rem;
+  padding: 1rem;
+  min-height: 8rem;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(8, 12, 20, 0.65);
+  font-family: ui-monospace, monospace;
+  font-size: calc(var(--rules-font) - 0.1rem);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-scroll {
+  overflow-y: auto;
+}
+
+.status-line {
+  margin: 0.75rem 0;
+  color: var(--muted);
+}
+
+.status-line.ok {
+  color: var(--ok);
+}
+
+.status-line.err {
+  color: var(--danger);
+}
+
+.mcp-toggles {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.mcp-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(8, 12, 20, 0.4);
+}
+
+.mcp-toggle-row.unavailable {
+  opacity: 0.55;
+}
+
+.mcp-toggle-row label {
+  flex: 1;
+  cursor: pointer;
+}
+
+.mcp-toggle-title {
+  font-weight: 600;
+  display: block;
+}
+
+.mcp-toggle-desc {
+  font-size: var(--rules-font);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.actions-row {
+  margin: 1rem 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.tabs__btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 0.35rem 0.85rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tabs__btn--active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.output-links {
+  margin-top: 0.75rem;
+  font-size: var(--rules-font);
+}
+
+.output-links a {
+  color: var(--accent);
+}
+
+.modal[hidden] {
+  display: none !important;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.modal__panel {
+  position: relative;
+  max-width: 720px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 0 40px var(--neon-purple);
+}
+
+.modal__title {
+  margin: 0 0 0.5rem;
+}
+
+.modal__desc {
+  color: var(--muted);
+  font-size: var(--rules-font);
+  margin: 0 0 1rem;
+}
+
+.modal__section {
+  margin-bottom: 1rem;
+}
+
+.modal__section-title {
+  margin: 0 0 0.5rem;
+  font-size: var(--rules-font-lg);
+  font-weight: 600;
+}
+
+.modal__field {
+  margin-bottom: 0.75rem;
+}
+
+.modal__field label {
+  display: block;
+  font-size: var(--rules-font);
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.modal__field .select,
+.modal__field .input,
+.modal__field textarea {
+  font-size: var(--rules-font);
+}
+
+.modal__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  cursor: pointer;
+  margin: 0.75rem 0;
+}
+
+.toggle input {
+  display: none;
+}
+
+.toggle-slider {
+  width: 2.5rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  transition: background 0.2s;
+}
+
+.toggle-slider::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.2s;
+}
+
+.toggle input:checked + .toggle-slider {
+  background: color-mix(in srgb, var(--ok) 50%, var(--border));
+}
+
+.toggle input:checked + .toggle-slider::after {
+  transform: translateX(1.1rem);
+}
+
+.toggle-label {
+  font-size: var(--rules-font);
+  line-height: 1.4;
+}
+
+.git-fields.hidden,
+.hidden {
+  display: none !important;
+}
+
+.req {
+  color: var(--danger);
+}
+
+.inline-hint {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.doc-link {
+  color: var(--accent);
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}

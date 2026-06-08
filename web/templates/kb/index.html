@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} — 1C:Cursor{% endblock %}
+{% block subtitle %}{{ page_subtitle }}{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/kb.css') }}">
+
+<nav class="section-nav" aria-label="Навигация раздела"><a href="/">← Обзор</a></nav>
+<section class="panel">
+  <div class="panel-head">
+    <h1>{{ page_title }}</h1>
+    <span class="card-badge status-{{ section_status }}">{{ section_status_label }}</span>
+  </div>
+  <p class="hint">
+    Один профиль = одна конфигурация 1С = один MCP на порту 83xx.
+    Для крупных баз первая индексация может занять несколько часов.
+    <a href="{{ doc_link }}" class="doc-link">Подробнее</a>
+  </p>
+  <div class="actions-row">
+    <button type="button" class="btn primary" id="btn-new-profile">+ Новый профиль</button>
+  </div>
+  <div id="profiles-list" class="cards">Загрузка…</div>
+</section>
+
+<section class="panel" id="health-panel">
+  <h2>Диагностика системы</h2>
+  <div id="health-summary" class="runtime-line">Загрузка…</div>
+  <table class="health-table hidden" id="health-system-table">
+    <thead><tr><th>Профиль</th><th>Состояние</th><th>Проблемы</th></tr></thead>
+    <tbody id="health-system-body"></tbody>
+  </table>
+</section>
+
+<details class="panel collapsible" id="wizard-panel" open>
+  <summary>
+    <h2 class="collapsible-title">Мастер первого профиля <span class="tag-optional">необязательно</span></h2>
+  </summary>
+  <p class="hint">
+    Пошаговый помощник для новичков: проверит путь, оценит время индексации и создаст профиль.
+    Опытным пользователям быстрее кнопка <strong>«+ Новый профиль»</strong> выше.
+  </p>
+  <div class="wizard-steps" id="wizard-steps">
+    <span class="wizard-step active" data-step="1">1. Путь</span>
+    <span class="wizard-step" data-step="2">2. Анализ</span>
+    <span class="wizard-step" data-step="3">3. Настройки</span>
+    <span class="wizard-step" data-step="4">4. Профиль</span>
+    <span class="wizard-step" data-step="5">5. Индекс</span>
+  </div>
+
+  <div class="wizard-pane" id="wizard-pane-1">
+    <p class="hint">Каталог EDT-проекта (с папкой <code>src/</code>) или XML-выгрузки конфигурации.</p>
+    <div class="path-row wizard-path-row">
+      <input id="wizard-root" placeholder="Путь к проекту" autocomplete="off">
+      <button type="button" class="btn" id="btn-wizard-pick">Выбрать…</button>
+    </div>
+    <div class="wizard-actions-spaced">
+      <button type="button" class="btn primary" id="btn-wizard-next-1">Далее →</button>
+    </div>
+  </div>
+
+  <div class="wizard-pane hidden" id="wizard-pane-2">
+    <div id="wizard-preview-summary" class="runtime-line"></div>
+    <pre id="wizard-result" class="log log-scroll hidden"></pre>
+    <div class="actions">
+      <button type="button" class="btn" id="btn-wizard-back-2">← Назад</button>
+      <button type="button" class="btn primary" id="btn-wizard-next-2">Далее →</button>
+    </div>
+  </div>
+
+  <div class="wizard-pane hidden" id="wizard-pane-3">
+    <label class="checkbox">
+      <input type="checkbox" id="wizard-include-forms">
+      Индексировать модули форм
+    </label>
+    <label class="checkbox"><input type="checkbox" id="wizard-docs" checked> Индексировать docs/</label>
+    <label>Способ векторизации
+      <select id="wizard-emb-provider">
+        <option value="local">На этом компьютере</option>
+        <option value="openai">OpenAI API</option>
+      </select>
+    </label>
+    <label>Устройство
+      <select id="wizard-emb-device">
+        <option value="auto">auto</option>
+        <option value="cpu">cpu</option>
+        <option value="cuda">cuda</option>
+        <option value="mps">mps</option>
+      </select>
+    </label>
+    <p class="hint hidden" id="wizard-openai-hint">OpenAI: <code>OPENAI_API_KEY</code> в окружении kb-web.</p>
+    <button type="button" class="btn btn-ghost" id="btn-wizard-check-embeddings">Проверить</button>
+    <span id="wizard-emb-check-result" class="runtime-line"></span>
+    <div class="actions">
+      <button type="button" class="btn" id="btn-wizard-back-3">← Назад</button>
+      <button type="button" class="btn primary" id="btn-wizard-next-3">Далее →</button>
+    </div>
+  </div>
+
+  <div class="wizard-pane hidden" id="wizard-pane-4">
+    <label>Имя профиля (латиница)
+      <input id="wizard-profile-name" placeholder="bp-30">
+    </label>
+    <label>Отображаемое имя
+      <input id="wizard-display-name" placeholder="1С:БП 3.0">
+    </label>
+    <div class="actions">
+      <button type="button" class="btn" id="btn-wizard-back-4">← Назад</button>
+      <button type="button" class="btn primary" id="btn-wizard-create">Создать профиль</button>
+    </div>
+    <p id="wizard-create-error" class="error hidden"></p>
+  </div>
+
+  <div class="wizard-pane hidden" id="wizard-pane-5">
+    <p id="wizard-done-msg" class="runtime-line ok"></p>
+    <div class="actions">
+      <button type="button" class="btn primary" id="btn-wizard-start-index">Запустить полную индексацию</button>
+      <a class="btn" id="wizard-open-profile" href="#">Открыть профиль</a>
+    </div>
+  </div>
+</details>
+
+<section class="panel">
+  <h2>Восстановление индекса</h2>
+  <p class="hint">Импорт ранее экспортированного архива <code>.tar.gz</code> (или <code>.tar</code>) — если переносили базу на другой компьютер.</p>
+  <button type="button" class="btn" id="btn-open-import">Импортировать архив…</button>
+</section>
+
+<dialog id="dialog-import-index" class="dialog">
+  <h2>Импорт индекса</h2>
+  <form id="form-import-index">
+    <div class="file-picker-field">
+      <span class="file-picker-caption">Файл архива (.tar.gz или .tar)</span>
+      <label class="file-picker-trigger">
+        <img src="{{ url_for('static', filename='img/icon-file.png') }}" alt="" class="file-picker-icon" width="32" height="32">
+        <span class="file-picker-text" id="import-file-text">Выбрать файл…</span>
+        <input type="file" id="import-file" class="file-picker-input" accept=".tar.gz,.tgz,.tar,application/gzip,application/x-tar" required>
+      </label>
+    </div>
+    <label>Имя профиля (если пусто — из архива)
+      <input type="text" id="import-target" placeholder="bp-30">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" id="import-overwrite">
+      <span class="checkbox-label">Перезаписать существующий профиль с тем же именем</span>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close-import>Отмена</button>
+      <button type="submit" class="btn primary">Импортировать</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dialog-new-profile" class="dialog">
+  <form id="form-new-profile" method="dialog">
+    <h2>Новый профиль</h2>
+    <label>Имя профиля (латиница)
+      <input name="name" required placeholder="bp-30">
+    </label>
+    <label>Отображаемое имя
+      <input name="display_name" placeholder="1С:БП 3.0">
+    </label>
+    <label>Формат
+      <select name="format">
+        <option value="edt">EDT (src/*.mdo)</option>
+        <option value="xml_export">XML-выгрузка</option>
+      </select>
+    </label>
+    <label>Путь к проекту / выгрузке
+      <div class="path-row">
+        <input name="root" id="input-root" required placeholder="Нажмите «Выбрать…»" autocomplete="off">
+        <button type="button" class="btn" id="btn-pick-root">Выбрать…</button>
+      </div>
+    </label>
+    <label class="edt-only hidden" id="label-src">Подкаталог src (EDT)
+      <input name="src" id="input-src" value="src">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="docs_enabled" checked>
+      Индексировать docs/ (если есть в проекте)
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" id="dialog-include-forms">
+      Индексировать модули форм
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close>Отмена</button>
+      <button type="submit" class="btn primary">Создать</button>
+    </div>
+    <p id="form-error" class="error hidden"></p>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/kb.js') }}"></script>
+<script>initDashboard();</script>
+{% endblock %}

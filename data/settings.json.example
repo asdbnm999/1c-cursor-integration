@@ -1,0 +1,35 @@
+{
+  "ui": {
+    "palette": "midnight"
+  },
+  "docker": {
+    "root": "~/DockerMCP"
+  },
+  "plugins": {
+    "installed": []
+  },
+  "mcp": {
+    "standard": {
+      "searxng": {
+        "enabled": false,
+        "host_port_mcp": 8201,
+        "host_port_core": 8202
+      },
+      "1c-syntax-helper": {
+        "enabled": false,
+        "host_port_mcp": 8203,
+        "hbk_path": ""
+      }
+    },
+    "kb_profiles": {}
+  },
+  "rules": {
+    "last_output": {}
+  },
+  "sections": {
+    "plugins": "not_started",
+    "mcp": "not_started",
+    "kb": "not_started",
+    "rules": "not_started"
+  }
+}

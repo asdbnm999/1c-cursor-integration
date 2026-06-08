@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} — 1C:Cursor{% endblock %}
+{% block subtitle %}{{ page_subtitle }}{% endblock %}
+{% block content %}
+<nav class="section-nav" aria-label="Навигация раздела"><a href="/">← Обзор</a></nav>
+<section class="panel">
+  <div class="panel-head">
+    <h1>{{ page_title }}</h1>
+    <span id="section-badge" class="card-badge status-{{ section_status }}">{{ section_status_label }}</span>
+  </div>
+  <p class="hint">
+    Установка VSIX-расширений в Cursor: подсветка BSL и дерево конфигурации 1С.
+    <a href="{{ doc_link }}" class="doc-link">Подробнее</a>
+  </p>
+
+  <div id="plugins-update-banner" class="warning-item hidden" role="status"></div>
+  <div id="plugins-errors" class="warnings-list hidden"></div>
+
+  <div class="subpanel">
+    <h2>Каталог расширений Cursor</h2>
+    <p class="hint">
+      Путь для установки и проверки версий.
+      <span class="help-tip" title="На macOS по умолчанию ~/.cursor/extensions/ или каталог Application Support. На Windows и Linux — см. документацию.">?</span>
+    </p>
+    <div class="field-row">
+      <input type="text" id="cursor-dir-input" class="text-input" placeholder="Автоопределение…" aria-label="Каталог расширений Cursor">
+      <button type="button" class="btn" id="btn-pick-cursor-dir">Выбрать…</button>
+      <button type="button" class="btn btn-ghost" id="btn-save-cursor-dir">Сохранить путь</button>
+    </div>
+    <p id="cursor-cli-hint" class="runtime-line"></p>
+  </div>
+
+  <div class="subpanel">
+    <h2>В комплекте (bundled)</h2>
+    <p class="hint">Оба расширения нужны для статуса «Готово».</p>
+    <table class="data-table" id="bundled-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="bundled-select-all" checked aria-label="Выбрать все bundled"></th>
+          <th>Файл</th>
+          <th>Расширение</th>
+          <th>Версия VSIX</th>
+          <th>Статус</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="subpanel">
+    <h2>Дополнительные VSIX</h2>
+    <p class="hint">Файлы из <code>assets/extensions/*.vsix</code>, кроме bundled.</p>
+    <div class="field-row">
+      <button type="button" class="btn" id="btn-add-vsix">Добавить VSIX…</button>
+    </div>
+    <table class="data-table" id="additional-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Файл</th>
+          <th>Расширение</th>
+          <th>Версия</th>
+          <th>Статус</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="additional-empty" class="hint hidden">Дополнительных VSIX нет.</p>
+  </div>
+
+  <div class="field-row actions-row">
+    <button type="button" class="btn btn-primary" id="btn-install">Установить выбранные</button>
+    <button type="button" class="btn btn-ghost" id="btn-refresh">Обновить статус</button>
+  </div>
+
+  <div id="install-report" class="install-report hidden"></div>
+</section>
+
+<dialog id="conflict-dialog" class="modal-dialog">
+  <form method="dialog" class="modal-form">
+    <h3>Конфликт версий</h3>
+    <p id="conflict-text"></p>
+    <div class="modal-actions">
+      <button type="submit" class="btn btn-primary" value="reinstall">Переустановить</button>
+      <button type="submit" class="btn btn-ghost" value="skip">Пропустить</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/plugins.js') }}"></script>
+{% endblock %}

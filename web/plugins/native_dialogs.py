@@ -1,0 +1,182 @@
+"""Системные диалоги выбора файла и каталога (ТЗ §9.3, §9.8)."""
+
+from __future__ import annotations
+
+import platform
+import subprocess
+import sys
+import threading
+from collections.abc import Callable
+from typing import TypeVar
+
+T = TypeVar("T")
+
+DIALOG_TIMEOUT_SEC = 600
+
+
+def _escape_applescript_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _run_osascript(script: str, *, timeout: int = DIALOG_TIMEOUT_SEC) -> tuple[int, str]:
+    result = subprocess.run(
+        ["osascript", "-"],
+        input=script,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return result.returncode, (result.stdout or "").strip()
+
+
+def _with_keepalive(work: Callable[[], T | None], keepalive: Callable[[], None] | None) -> T | None:
+    if not keepalive:
+        return work()
+
+    stop = threading.Event()
+
+    def _pulse() -> None:
+        while not stop.wait(8):
+            keepalive()
+
+    keepalive()
+    pulse = threading.Thread(target=_pulse, daemon=True)
+    pulse.start()
+    try:
+        return work()
+    finally:
+        stop.set()
+        pulse.join(timeout=1)
+        keepalive()
+
+
+def _pick_directory_tk(title: str) -> str | None:
+    code = f"""
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+root.update()
+try:
+    root.attributes("-topmost", True)
+except tk.TclError:
+    pass
+root.lift()
+root.focus_force()
+path = filedialog.askdirectory(title={title!r}, mustexist=True)
+print(path or "")
+root.destroy()
+"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=DIALOG_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    path = result.stdout.strip()
+    return path or None
+
+
+def _pick_file_tk(title: str, filetypes: list[tuple[str, str]]) -> str | None:
+    types_repr = repr(filetypes)
+    code = f"""
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+root.update()
+try:
+    root.attributes("-topmost", True)
+except tk.TclError:
+    pass
+root.lift()
+root.focus_force()
+path = filedialog.askopenfilename(title={title!r}, filetypes={types_repr})
+print(path or "")
+root.destroy()
+"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=DIALOG_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    path = result.stdout.strip()
+    return path or None
+
+
+def _pick_directory_macos(title: str) -> str | None:
+    safe_title = _escape_applescript_string(title)
+    script = f'''tell application "System Events" to activate
+set theFolder to choose folder with prompt "{safe_title}"
+POSIX path of theFolder
+'''
+    code, out = _run_osascript(script)
+    if code != 0:
+        return None
+    return out or None
+
+
+def _pick_file_macos(title: str) -> str | None:
+    safe_title = _escape_applescript_string(title)
+    script = f'''tell application "System Events" to activate
+set theFile to choose file with prompt "{safe_title}" of type {{"vsix", "public.item"}}
+POSIX path of theFile
+'''
+    code, out = _run_osascript(script)
+    if code != 0:
+        return None
+    return out or None
+
+
+def pick_directory(
+    title: str = "Выберите каталог расширений Cursor",
+    *,
+    keepalive: Callable[[], None] | None = None,
+) -> str | None:
+    def _work() -> str | None:
+        if platform.system() == "Darwin":
+            return _pick_directory_macos(title)
+        return _pick_directory_tk(title)
+
+    return _with_keepalive(_work, keepalive)
+
+
+def pick_vsix_file(
+    title: str = "Выберите файл VSIX",
+    *,
+    keepalive: Callable[[], None] | None = None,
+) -> str | None:
+    def _work() -> str | None:
+        if platform.system() == "Darwin":
+            return _pick_file_macos(title)
+        return _pick_file_tk(title, [("VSIX", "*.vsix"), ("Все файлы", "*.*")])
+
+    return _with_keepalive(_work, keepalive)
+
+
+def pick_file(
+    title: str = "Выберите файл",
+    *,
+    filetypes: list[tuple[str, str]] | None = None,
+    keepalive: Callable[[], None] | None = None,
+) -> str | None:
+    """Универсальный выбор файла (HBK и др.)."""
+    types = filetypes or [("Все файлы", "*.*")]
+
+    def _work() -> str | None:
+        if platform.system() == "Darwin":
+            return _pick_file_macos(title)
+        return _pick_file_tk(title, types)
+
+    return _with_keepalive(_work, keepalive)

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} — 1C:Cursor{% endblock %}
+{% block subtitle %}{{ page_subtitle }}{% endblock %}
+{% block content %}
+<nav class="section-nav" aria-label="Навигация раздела"><a href="/">← Обзор</a></nav>
+
+<div class="mcp-page-head">
+  <div id="mcp-legacy-banner" class="warning-item hidden" role="alert"></div>
+  <div id="mcp-docker-banner" class="warning-item hidden" role="alert"></div>
+  <div id="mcp-port-warnings" class="warnings-list hidden"></div>
+</div>
+
+<section class="panel mcp-block" id="mcp-block-docker-root">
+  <div class="server-panel-head">
+    <h2>Корень Docker</h2>
+    <span id="section-badge" class="card-badge status-{{ section_status }}">{{ section_status_label }}</span>
+  </div>
+  <p class="hint">
+    Каталоги <code>searxng/</code> и <code>1c-syntax/</code> внутри корня.
+    <span class="help-tip" title="По умолчанию ~/DockerMCP/. Не используйте корневой docker-compose.yml — он устарел.">?</span>
+  </p>
+  <p id="docker-root-line" class="runtime-line"></p>
+</section>
+
+<section class="panel mcp-block" id="mcp-block-resources">
+  <h2>Ресурсы контейнеров</h2>
+  <p class="hint">Пресет «Экономный» по умолчанию. Значения выше «Расширенного» — предупреждение.</p>
+  <div class="field-row">
+    <label>
+      Пресет
+      <select id="resource-preset" class="text-input" style="max-width:220px">
+        <option value="economical">Экономный</option>
+        <option value="extended">Расширенный</option>
+        <option value="manual">Ручной</option>
+      </select>
+    </label>
+  </div>
+  <div id="resource-sliders" class="resource-grid"></div>
+</section>
+
+<section class="panel mcp-block" id="mcp-block-mcp-json">
+  <h2>mcp.json</h2>
+  <p class="hint">После deploy — merge только выбранных серверов. URL: <code>127.0.0.1</code>.</p>
+  <div class="field-row">
+    <button type="button" class="btn" id="btn-preview-mcp">Preview diff</button>
+    <button type="button" class="btn btn-primary" id="btn-apply-mcp">Применить в mcp.json</button>
+  </div>
+  <pre id="mcp-diff" class="code-block hidden"></pre>
+  <p id="mcp-refresh-hint" class="hint hidden">Обновите MCP в Cursor: Settings → MCP → Refresh</p>
+  <p id="mcp-config-path" class="runtime-line"></p>
+</section>
+
+<section class="panel mcp-block" id="mcp-block-diagnostics">
+  <h2>Диагностика</h2>
+  <div class="field-row">
+    <button type="button" class="btn" id="btn-check-orphans">Проверить осиротевшие контейнеры SearXNG</button>
+    <button type="button" class="btn" id="btn-errors">Типовые ошибки</button>
+  </div>
+  <div id="orphans-report" class="install-report hidden"></div>
+</section>
+
+<dialog id="errors-dialog" class="modal-dialog modal-wide">
+  <form method="dialog" class="modal-form">
+    <h3>Типовые ошибки Docker MCP</h3>
+    <p class="hint">Статический каталог + последние строки логов выбранного стека.</p>
+    <label>
+      Стек
+      <select id="errors-server" class="text-input">
+        <option value="searxng">SearXNG</option>
+        <option value="1c-syntax-helper">1C Syntax Helper</option>
+      </select>
+    </label>
+    <div id="errors-static" class="errors-list"></div>
+    <h4>Совпадения в логах</h4>
+    <div id="errors-matched" class="errors-list"></div>
+    <pre id="errors-logs" class="code-block code-block-sm"></pre>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="btn-reload-errors">Обновить логи</button>
+      <button type="submit" class="btn btn-primary">Закрыть</button>
+    </div>
+  </form>
+</dialog>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/mcp.js') }}"></script>
+{% endblock %}

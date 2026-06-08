@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Генерация правил — 1C:Cursor{% endblock %}
+{% block subtitle %}{{ page_subtitle }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/rules.css') }}">
+
+<nav class="section-nav" aria-label="Навигация раздела">
+  <a href="/">← Обзор</a>
+  <span class="section-nav-sep">·</span>
+  <a href="{{ doc_link }}" class="doc-link">Подробнее: генерация правил</a>
+</nav>
+
+<section class="panel workflow-step" id="section-project" data-step="project">
+  <div class="step-header">
+    <h2>1. Проект</h2>
+    <span class="step-badge" id="badge-project">Не выполнено</span>
+  </div>
+  <p class="hint">Путь к XML-выгрузке конфигуратора или проекту EDT.</p>
+  <div class="field-row">
+    <label class="label" for="exportPath">Путь к проекту <span class="req">*</span></label>
+    <div class="field-inline">
+      <input type="text" id="exportPath" class="input" placeholder="/путь/к/проекту" autocomplete="off"
+        value="{{ initial_project_path }}" />
+      <button type="button" id="btnPickExport" class="btn">Выбрать папку…</button>
+    </div>
+  </div>
+  <div class="field-row">
+    <label class="label">Тип проекта</label>
+    <input type="text" id="projectType" class="input input--readonly" readonly placeholder="Определится после анализа" />
+  </div>
+  <div id="gitFields" class="git-fields hidden">
+    <div class="field-row">
+      <label class="label" for="gitBranch">Ветка Git</label>
+      <input type="text" id="gitBranch" class="input" placeholder="main" autocomplete="off" />
+      <span class="hint inline-hint">Подтвердите или исправьте значение из .git</span>
+    </div>
+    <div class="field-row">
+      <label class="label" for="gitRemote">Remote</label>
+      <input type="text" id="gitRemote" class="input input--readonly" readonly />
+    </div>
+  </div>
+</section>
+
+<section class="panel workflow-step workflow-step--locked" id="section-analyze" data-step="analyze">
+  <div class="step-header">
+    <h2>2. Анализ</h2>
+    <span class="step-badge" id="badge-analyze">Не выполнено</span>
+  </div>
+  <button type="button" id="btnAnalyze" class="btn primary">Анализировать проект</button>
+  <pre id="analysisOut" class="output log-scroll" readonly tabindex="0">Результат анализа появится здесь…</pre>
+</section>
+
+<section class="panel workflow-step workflow-step--locked" id="section-main" data-step="main">
+  <div class="step-header">
+    <h2>3. Основные параметры</h2>
+    <span class="step-badge" id="badge-main">Не выполнено</span>
+  </div>
+  <div id="generalFields" class="fields-grid"></div>
+  <div class="section-divider">
+    <h3>Комментирование решений AI</h3>
+  </div>
+  <div id="aiCommentFields" class="fields-grid"></div>
+  <div class="section-divider">
+    <h3>Пояснения</h3>
+  </div>
+  <div id="aiExplainFields" class="fields-grid"></div>
+  <div class="advanced-rules-bar">
+    <button type="button" id="btnAdvancedRules" class="btn">Дополнительные правила…</button>
+    <span id="advancedSummary" class="advanced-summary">Не открывали — откройте modal и сохраните</span>
+  </div>
+</section>
+
+<section class="panel workflow-step workflow-step--locked" id="section-mcp-rules" data-step="mcp">
+  <div class="step-header">
+    <h2>4. MCP в правилах</h2>
+    <span class="step-badge" id="badge-mcp">Не выполнено</span>
+  </div>
+  <p class="hint">Тексты для AI зависят от серверов в <code>mcp.json</code>. Можно переопределить перед генерацией.</p>
+  <div id="mcpToggles" class="mcp-toggles"></div>
+  <button type="button" id="btnMcpAccept" class="btn primary">Принять настройки MCP</button>
+</section>
+
+<section class="panel workflow-step workflow-step--locked" id="section-generate" data-step="generate">
+  <div class="step-header">
+    <h2>5. Генерация</h2>
+    <span class="step-badge" id="badge-generate">Не выполнено</span>
+  </div>
+  <label class="toggle">
+    <input type="checkbox" id="writeToCursorRules" checked>
+    <span class="toggle-slider"></span>
+    <span class="toggle-label">Записать в <code>.cursor/rules/</code> проекта</span>
+  </label>
+  <div id="customOutputWrap" class="field-row hidden">
+    <label class="label" for="outputPath">Файл правил (.md)</label>
+    <div class="field-inline">
+      <input type="text" id="outputPath" class="input" placeholder="Путь к основному .md" />
+      <button type="button" id="btnPickOutput" class="btn">Выбрать файл…</button>
+    </div>
+  </div>
+  <div class="actions-row">
+    <button type="button" id="btnGenerate" class="btn primary">Сгенерировать</button>
+  </div>
+  <p id="status" class="status-line">Заполните предыдущие шаги.</p>
+  <div class="tabs" role="tablist">
+    <button type="button" class="tabs__btn tabs__btn--active" data-tab="preview" role="tab">Предпросмотр</button>
+    <button type="button" class="tabs__btn" data-tab="eventlog" role="tab">Журнал регистрации</button>
+  </div>
+  <pre id="previewOut" class="output log-scroll" tabindex="0"></pre>
+  <pre id="eventLogOut" class="output log-scroll hidden" tabindex="0"></pre>
+  <div id="outputLinks" class="output-links hidden"></div>
+</section>
+
+<div id="advancedModal" class="modal" hidden aria-hidden="true">
+  <div class="modal__backdrop" data-close-modal></div>
+  <div class="modal__panel" role="dialog" aria-labelledby="advancedModalTitle">
+    <header class="modal__header">
+      <h2 id="advancedModalTitle" class="modal__title">Дополнительные правила</h2>
+      <p class="modal__desc">
+        Пункты «— не включать в файл —» не попадут в .md.
+        При первом открытии <code>create_metadata</code> = «нет»; «Рекомендуемые» — «с разрешения».
+      </p>
+    </header>
+    <div id="advancedModalBody" class="modal__body"></div>
+    <footer class="modal__footer">
+      <button type="button" id="advancedClear" class="btn btn-ghost">Не включать в файл</button>
+      <button type="button" id="advancedRecommend" class="btn">Рекомендуемые</button>
+      <button type="button" id="advancedCancel" class="btn btn-ghost" data-close-modal>Отмена</button>
+      <button type="button" id="advancedApply" class="btn primary">Сохранить</button>
+    </footer>
+  </div>
+</div>
+
+<script>
+  window.RULES_BOOT = {
+    initialProjectPath: {{ initial_project_path|tojson }},
+    lastOutput: {{ last_output|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='js/rules.js') }}" type="module"></script>
+{% endblock %}

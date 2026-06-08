@@ -1,0 +1,57 @@
+profile:
+  name: PROFILE_NAME
+  display_name: "DISPLAY_NAME"
+  git_branch: ""
+
+project:
+  format: edt              # edt | xml_export
+  root: /path/to/project
+  src: src                 # только для edt; для xml_export оставьте пустым или удалите
+
+indexing:
+  include_dirs: []
+  exclude_dirs: []
+  exclude_globs: []
+  include_forms: false   # true — индексировать XML-формы и модули форм
+
+watch:
+  enabled: false
+  mode: poll          # poll | watchdog (pip install watchdog)
+  poll_interval_sec: 2
+  debounce_sec: 3
+
+search:
+  hybrid: true
+  vector_weight: 0.65
+  keyword_weight: 0.35
+
+docs:
+  enabled: true
+  paths:
+    - docs
+
+chunking:
+  target_tokens: 800
+  overlap_ratio: 0.12
+  min_tokens: 100
+
+embeddings:
+  provider: local
+  model: intfloat/multilingual-e5-small
+  batch_size: 128
+  device: auto   # auto | cpu | cuda | mps
+
+store:
+  path: data/profiles/PROFILE_NAME/chroma
+  collection: PROFILE_NAME
+
+mcp:
+  server_name: 1c-kb-PROFILE_NAME
+  transport: http
+  host: "0.0.0.0"
+  port: 8301
+  default_search_limit: 8
+
+docker:
+  compose_dir: ""
+  gpu: false          # true — NVIDIA runtime в docker-compose (или KB_DOCKER_GPU=1)

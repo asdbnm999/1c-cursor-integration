@@ -1,0 +1,16 @@
+# 1C KB — Caddy reverse proxy с автоматическим TLS
+# Замените kb.example.com на ваш домен.
+
+kb.example.com {
+    reverse_proxy 127.0.0.1:5050 {
+        flush_interval -1
+    }
+
+    request_body {
+        max_size 512MB
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}

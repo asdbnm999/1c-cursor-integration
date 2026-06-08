@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}{{ profile_name }} — 1C:Cursor{% endblock %}
+{% block subtitle %}{{ page_subtitle }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/kb.css') }}">
+<p><a href="/kb/">← Все профили</a> · <a href="/rules/?project_path=" id="link-rules" class="doc-link">Сгенерировать правила</a></p>
+
+<div id="profile-detail">Загрузка…</div>
+
+<section class="panel workflow-step" id="section-index" data-step="index">
+  <div class="step-header">
+    <h2>1. Индексация</h2>
+    <div class="step-header-actions">
+      <button type="button" class="btn btn-ghost" id="btn-index-settings">⚙ Настройки</button>
+      <span class="step-badge" id="badge-index">Не выполнено</span>
+    </div>
+  </div>
+  <p class="hint">
+    Сначала — <strong>полная индексация</strong> (долго на больших базах).
+    Потом — <strong>обновить индекс</strong> только по изменённым файлам.
+  </p>
+  <div id="index-changes" class="runtime-line"></div>
+  <div id="checkpoint-hint" class="runtime-line hidden"></div>
+  <p class="hint">Векторный индекс хранится в <code>data/profiles/{{ profile_name }}/chroma</code> (каталог проекта 1c-cursor).</p>
+  <div class="index-actions-grid">
+    <button type="button" class="btn primary" id="btn-index-incremental">Обновить индекс</button>
+    <button type="button" class="btn primary hidden" id="btn-index-resume">Продолжить</button>
+    <button type="button" class="btn" id="btn-index-full">Полная индексация</button>
+    <button type="button" class="btn btn-ghost hidden" id="btn-checkpoint-clear">Сбросить checkpoint</button>
+  </div>
+  <details class="index-advanced">
+    <summary>Дополнительно: проверка сканирования</summary>
+    <button type="button" class="btn btn-ghost" id="btn-scan">Проверить сканирование</button>
+    <button type="button" class="btn btn-ghost" id="btn-index-changes-preview">Проверить изменения</button>
+    <pre id="scan-result" class="log log-scroll hidden"></pre>
+  </details>
+  <div class="watch-row">
+    <label class="toggle">
+      <input type="checkbox" id="watch-toggle">
+      <span class="toggle-slider"></span>
+      <span class="toggle-label">Автообновление индекса (Watch)</span>
+    </label>
+    <span class="hint inline-hint">Следит за файлами и сам запускает инкремент при сохранении в IDE</span>
+  </div>
+  <div id="watch-status" class="runtime-line"></div>
+  <div id="job-progress" class="progress-bar hidden"><div id="job-progress-fill"></div></div>
+  <div id="job-phase" class="runtime-line hidden"></div>
+  <div id="job-status" class="job-status hidden"></div>
+  <button type="button" class="btn danger hidden" id="btn-job-cancel">Отменить индексацию</button>
+</section>
+
+<section class="panel">
+  <h2>Диагностика <span id="health-state-badge" class="step-badge"></span></h2>
+  <table class="health-table" id="profile-health-table">
+    <thead><tr><th>Проверка</th><th>Статус</th><th>Детали</th></tr></thead>
+    <tbody id="profile-health-body"><tr><td colspan="3">Загрузка…</td></tr></tbody>
+  </table>
+</section>
+
+<section class="panel workflow-step" id="section-docker" data-step="docker">
+  <div class="step-header">
+    <h2>2. Docker MCP-сервер</h2>
+    <span class="step-badge" id="badge-docker">Не выполнено</span>
+  </div>
+  <p class="hint">Контейнер отдаёт поиск в Cursor. Отдельная группа в Docker Desktop на каждый профиль. Шаги по порядку: собрать образ → указать папку compose → запустить.</p>
+  <p id="docker-gate-hint" class="hint gate-hint hidden"></p>
+  <div id="docker-compose-dir" class="runtime-line"></div>
+  <div class="actions" id="docker-controls">
+    <button type="button" class="btn" id="btn-docker-build">Собрать образ</button>
+    <button type="button" class="btn" id="btn-docker-pick-dir">Выбрать директорию compose…</button>
+    <button type="button" class="btn btn-ghost" id="btn-docker-use-default-compose">Стандартная папка</button>
+    <button type="button" class="btn primary" id="btn-docker-start">Запустить контейнер</button>
+    <button type="button" class="btn danger" id="btn-docker-stop">Остановить</button>
+    <label class="checkbox inline">
+      <input type="checkbox" id="docker-rebuild">
+      Пересобрать образ
+    </label>
+  </div>
+  <div id="docker-runtime" class="runtime-line"></div>
+  <details id="docker-log-wrap" class="docker-log-details">
+    <summary id="docker-log-summary">Лог Docker</summary>
+    <div id="docker-status" class="log log-scroll" tabindex="0" role="log">Статус Docker…</div>
+  </details>
+</section>
+
+<section class="panel workflow-step" id="section-cursor" data-step="cursor">
+  <div class="step-header">
+    <h2>3. Подключение к Cursor</h2>
+    <span class="step-badge" id="badge-cursor">Не выполнено</span>
+  </div>
+  <p id="mcp-gate-hint" class="hint gate-hint hidden"></p>
+  <div class="watch-row mcp-mode-row">
+    <label class="toggle">
+      <input type="checkbox" id="mcp-mode-toggle" checked>
+      <span class="toggle-slider"></span>
+      <span class="toggle-label">Автообновление mcp.json</span>
+    </label>
+    <span class="hint inline-hint">Вкл. — запись в Cursor одной кнопкой; выкл. — загрузка и скачивание вручную</span>
+  </div>
+  <div id="mcp-panel-auto">
+    <p class="hint">Запустите контейнер выше, затем обновите <code>mcp.json</code>. Остальные MCP-серверы в файле сохранятся.</p>
+    <div id="cursor-dir-line" class="runtime-line"></div>
+    <div id="cursor-dir-pick-row" class="actions hidden">
+      <button type="button" class="btn" id="btn-cursor-pick-dir">Выбрать каталог Cursor…</button>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn primary" id="btn-mcp-apply">Обновить mcp.json в Cursor</button>
+      <button type="button" class="btn" id="btn-mcp-restore" disabled title="Восстановить последний mcp.json.bak-*">Отменить — из бэкапа</button>
+      <button type="button" class="btn" id="btn-cursor-check-auto">Проверить Cursor</button>
+    </div>
+  </div>
+  <div id="mcp-panel-manual" class="hidden">
+    <ol class="steps">
+      <li>Запустите контейнер выше</li>
+      <li>Загрузите свой <code>mcp.json</code> — мы добавим сервер этого профиля</li>
+      <li>Скачайте <strong>готовый</strong> <code>mcp.json</code> и положите в каталог Cursor</li>
+      <li>Cursor → Settings → MCP → включите сервер</li>
+    </ol>
+    <div class="actions">
+      <label class="btn">
+        Загрузить mcp.json
+        <input type="file" id="mcp-file" accept="application/json,.json" hidden>
+      </label>
+      <button type="button" class="btn primary" id="btn-mcp-download">Скачать готовый mcp.json</button>
+      <button type="button" class="btn" id="btn-cursor-check">Проверить Cursor</button>
+    </div>
+    <textarea id="mcp-result" class="code" rows="10" readonly placeholder="Результат слияния…"></textarea>
+    <button type="button" class="btn btn-ghost" id="btn-mcp-copy">Копировать в буфер</button>
+  </div>
+  <div id="cursor-status" class="runtime-line"></div>
+</section>
+
+<dialog id="dialog-index-settings" class="dialog dialog-wide">
+  <h2>Настройки индексации</h2>
+  <p class="hint">Векторизация текста для поиска. После смены модели нужна полная переиндексация.</p>
+  <div class="form-grid">
+    <label>Способ векторизации
+      <select id="emb-provider">
+        <option value="local">На этом компьютере (бесплатно)</option>
+        <option value="openai">OpenAI API (облако)</option>
+      </select>
+    </label>
+    <label>Устройство (только локально)
+      <select id="emb-device">
+        <option value="auto">Авто</option>
+        <option value="cpu">CPU</option>
+        <option value="cuda">NVIDIA GPU</option>
+        <option value="mps">Apple Silicon GPU</option>
+      </select>
+    </label>
+    <label>Модель векторизации
+      <select id="emb-model-select">
+        <optgroup label="Локальные (HuggingFace)">
+          <option value="intfloat/multilingual-e5-small">multilingual-e5-small (рекомендуется)</option>
+          <option value="intfloat/multilingual-e5-base">multilingual-e5-base (точнее, медленнее)</option>
+        </optgroup>
+        <optgroup label="OpenAI">
+          <option value="text-embedding-3-small">text-embedding-3-small</option>
+          <option value="text-embedding-3-large">text-embedding-3-large</option>
+        </optgroup>
+      </select>
+    </label>
+    <label>Размер пакета (batch)
+      <input id="emb-batch" type="number" min="8" max="512" placeholder="128">
+      <span class="field-hint">Сколько фрагментов обрабатывать за раз. Больше — быстрее, но нужно больше RAM.</span>
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" id="idx-include-forms">
+      Индексировать модули форм (XML и EDT)
+      <span class="field-hint">Если выключено — в поиск не попадут обработчики форм и их BSL-код.</span>
+    </label>
+  </div>
+  <p class="hint hidden" id="emb-openai-hint">OpenAI: задайте <code>OPENAI_API_KEY</code> в окружении, где запущен kb-web.</p>
+  <div id="emb-check-result" class="runtime-line hidden"></div>
+  <div class="dialog-actions">
+    <button type="button" class="btn" id="btn-check-embeddings">Проверить</button>
+    <button type="button" class="btn" data-close-settings>Отмена</button>
+    <button type="button" class="btn primary" id="btn-save-settings">Сохранить</button>
+  </div>
+</dialog>
+
+<dialog id="dialog-profile-tools" class="dialog dialog-wide">
+  <h2>Экспорт и сравнение</h2>
+  <section class="tool-block">
+    <h3>Экспорт индекса</h3>
+    <p class="hint">Архив .tar.gz с Chroma и метаданными — для переноса на другой ПК или бэкапа.</p>
+    <button type="button" class="btn primary" id="btn-export-index">Скачать архив индекса</button>
+  </section>
+  <section class="tool-block">
+    <h3>Клон профиля</h3>
+    <p class="hint">Копия настроек для другой ветки Git или релиза. Укажите имя нового профиля латиницей.</p>
+    <div class="path-row">
+      <input id="clone-target-name" placeholder="bp-30-release">
+      <button type="button" class="btn" id="btn-clone-profile">Создать клон</button>
+    </div>
+    <label class="checkbox">
+      <input type="checkbox" id="clone-copy-index">
+      Скопировать готовый индекс (не индексировать заново)
+    </label>
+  </section>
+  <section class="tool-block">
+    <h3>Сравнение с другим профилем</h3>
+    <p class="hint">Имя существующего профиля, например <code>bp-30-dev</code>.</p>
+    <div class="path-row">
+      <input id="compare-with" placeholder="имя-профиля" list="profile-names-list">
+      <datalist id="profile-names-list"></datalist>
+      <button type="button" class="btn" id="btn-compare">Сравнить</button>
+    </div>
+    <pre id="compare-result" class="log log-scroll hidden"></pre>
+    <div id="compare-table-wrap" class="hidden"></div>
+    <div class="actions">
+      <button type="button" class="btn hidden" id="btn-compare-export-json">Экспорт JSON</button>
+      <button type="button" class="btn hidden" id="btn-compare-export-csv">Экспорт CSV</button>
+    </div>
+  </section>
+  <div class="dialog-actions">
+    <button type="button" class="btn" data-close-tools>Закрыть</button>
+  </div>
+</dialog>
+
+<dialog id="dialog-delete-profile" class="dialog">
+  <h2>Удалить профиль?</h2>
+  <p class="hint warning-text">
+    Будут удалены безвозвратно: конфигурация профиля, индекс Chroma, checkpoint, Docker-контейнер
+    и каталог <code>data/profiles/{{ profile_name }}/</code>.
+  </p>
+  <p>Для подтверждения введите имя профиля: <strong>{{ profile_name }}</strong></p>
+  <label>
+    <input id="delete-confirm-name" placeholder="{{ profile_name }}" autocomplete="off">
+  </label>
+  <div class="dialog-actions">
+    <button type="button" class="btn" data-close-delete>Отмена</button>
+    <button type="button" class="btn danger" id="btn-delete-profile-confirm" disabled>Удалить навсегда</button>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/kb.js') }}"></script>
+<script>initProfilePage("{{ profile_name }}");</script>
+{% endblock %}

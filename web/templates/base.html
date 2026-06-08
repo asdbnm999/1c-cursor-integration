@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru" data-palette="{{ ui_palette }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}1C:Cursor{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <div id="docker-banner" class="system-banner hidden" role="alert" aria-live="polite"></div>
+
+  <header class="topbar">
+    <div class="topbar-brand">
+      <a href="/" class="logo">1C:Cursor</a>
+      <span class="subtitle">{% block subtitle %}Настройка среды разработки 1С в Cursor{% endblock %}</span>
+    </div>
+    <div class="topbar-tools">
+      <span id="docker-badge" class="badge" title="Состояние Docker">Docker …</span>
+      <label class="palette-select" title="Цветовая палитра интерфейса">
+        <span class="sr-only">Палитра</span>
+        <select id="palette-select" aria-label="Палитра">
+          <option value="midnight">Midnight</option>
+          <option value="ocean">Ocean</option>
+          <option value="forest">Forest</option>
+          <option value="ember">Ember</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

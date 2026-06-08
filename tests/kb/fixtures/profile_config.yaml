@@ -1,0 +1,38 @@
+profile:
+  name: test-fixture
+  display_name: "Test Fixture"
+
+project:
+  format: xml_export
+  root: FIXTURE_ROOT
+  src: ""
+
+indexing:
+  include_dirs:
+    - Documents
+  exclude_dirs: []
+  exclude_globs: []
+
+docs:
+  enabled: false
+  paths: []
+
+chunking:
+  target_tokens: 800
+  overlap_ratio: 0.12
+  min_tokens: 100
+
+embeddings:
+  provider: local
+  model: intfloat/multilingual-e5-small
+  batch_size: 64
+
+store:
+  path: data/profiles/test-fixture/chroma
+  collection: test-fixture
+
+mcp:
+  server_name: 1c-kb-test-fixture
+  transport: stdio
+  port: 8099
+  default_search_limit: 8

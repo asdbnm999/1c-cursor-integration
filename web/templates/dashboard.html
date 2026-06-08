@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}1C:Cursor — Dashboard{% endblock %}
+{% block subtitle %}{{ page_subtitle }}{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h1>Обзор</h1>
+    <span class="summary-pill" id="sections-summary-pill" title="Готовых разделов из четырёх">
+      {{ sections_summary.ready_count }} / {{ sections_summary.total }} готово
+    </span>
+  </div>
+  <div class="cards cards--dashboard" id="dashboard-cards">
+    {% for card in cards %}
+    <article class="card card--dashboard card-status-{{ card.status }}" id="card-{{ card.id }}" data-section="{{ card.id }}">
+      <a href="{{ card.url }}" class="card-dashboard-hit" aria-label="Открыть раздел: {{ card.title }}">
+        <div class="card-top">
+          <span class="card-badge status-{{ card.status }}" data-status-badge>{{ card.status_label }}</span>
+          <h3>{{ card.title }}</h3>
+        </div>
+        <p class="card-desc">{{ card.description }}</p>
+      </a>
+      <p class="card-doc-line">
+        <a href="{{ card.doc_link }}" class="doc-link">Документация</a>
+      </p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<div id="system-warnings" class="warnings-list hidden"></div>
+
+<section class="panel" id="health-panel">
+  <div class="panel-head">
+    <h2>
+      Диагностика системы
+      <button type="button" class="help-icon" title="Python 3.11+, Docker Engine 24+. Подробнее в docs/02-mcp-docker.md" aria-label="Справка">?</button>
+    </h2>
+    <button type="button" class="btn btn-ghost small" id="btn-refresh-system">Обновить</button>
+  </div>
+  <table class="data-table hidden" id="health-table">
+    <thead>
+      <tr><th>Компонент</th><th>Значение</th><th>Статус</th></tr>
+    </thead>
+    <tbody id="health-table-body"></tbody>
+  </table>
+</section>
+
+<section class="panel" id="mcp-panel">
+  <div class="panel-head">
+    <h2>
+      Состояние MCP
+      <button type="button" class="help-icon" title="Единый mcp.json Cursor. После изменений: Settings → MCP → Refresh." aria-label="Справка">?</button>
+    </h2>
+    <button type="button" class="btn btn-ghost small" id="btn-check-mcp">Проверить MCP</button>
+  </div>
+  <p class="hint">
+    Конфиг: <code id="mcp-config-path">…</code>.
+    <a href="/docs/05-cursor-mcp-setup.md">Настройка mcp.json</a>
+  </p>
+  <div id="mcp-status-summary" class="runtime-line">Загрузка…</div>
+  <table class="data-table hidden" id="mcp-table">
+    <thead>
+      <tr><th>Сервер</th><th>URL</th><th>Health</th><th>Детали</th></tr>
+    </thead>
+    <tbody id="mcp-table-body"></tbody>
+  </table>
+</section>
+
+<section class="panel" id="settings-panel">
+  <div class="panel-head">
+    <h2>
+      Настройки проекта
+      <button type="button" class="help-icon" title="Экспорт JSON без индексов KB. Для переноса профиля KB с индексами используйте export на странице KB." aria-label="Справка">?</button>
+    </h2>
+  </div>
+  <p class="hint">Экспорт и импорт настроек 1C:Cursor (палитра, пути Docker, статусы разделов). Индексы Chroma — через <a href="/kb/">базу знаний</a>.</p>
+  <div class="btn-row">
+    <button type="button" class="btn" id="btn-export-settings">Экспорт JSON</button>
+    <label class="btn btn-ghost file-label">
+      Импорт JSON
+      <input type="file" id="import-settings-file" accept="application/json,.json" hidden>
+    </label>
+  </div>
+  <p id="settings-io-message" class="runtime-line hidden"></p>
+</section>
+
+<details class="panel collapsible" id="wizard-panel" {% if not sections_summary.all_ready %}open{% endif %}>
+  <summary>
+    <h2 class="collapsible-title">Мастер первого запуска</h2>
+  </summary>
+  <p class="hint">Рекомендуемый порядок настройки. Статусы обновляются автоматически.</p>
+  <ol class="wizard-steps" id="wizard-steps">
+    {% for step in wizard_steps %}
+    <li class="wizard-step wizard-step--{{ step.status }}" data-section="{{ step.id }}">
+      <span class="wizard-step-marker" aria-hidden="true">{% if step.done %}✓{% else %}{{ step.index }}{% endif %}</span>
+      <a href="{{ step.url }}" class="wizard-step-link">{{ step.label }}</a>
+      <span class="wizard-step-badge status-{{ step.status }}">{{ step.status_label }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

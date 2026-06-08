@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ doc_title }} — 1C:Cursor{% endblock %}
+{% block subtitle %}Документация{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/docs.css') }}">
+{% endblock %}
+{% block content %}
+<section class="panel docs-panel">
+  <nav class="docs-nav" aria-label="Навигация по документации">
+    <a href="/" class="docs-nav-link">← Dashboard</a>
+    <span class="docs-nav-sep">·</span>
+    <a href="/docs/README.md" class="docs-nav-link">Оглавление</a>
+    {% if doc_path != 'README.md' %}
+    <span class="docs-nav-sep">·</span>
+    <span class="docs-nav-current">{{ doc_path }}</span>
+    {% endif %}
+  </nav>
+  <article class="docs-content">
+    {{ doc_html|safe }}
+  </article>
+</section>
+{% endblock %}

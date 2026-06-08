@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "source": "MCP-Docker-сборка-и-фиксы.md §4–6",
+  "errors": [
+    {
+      "id": "syntax-ping-missing",
+      "server": "1c-syntax-helper",
+      "title": "Method not found: ping",
+      "symptom": "Cursor показывает error у 1c-syntax-helper",
+      "log_pattern": "Method not found: ping",
+      "cause": "В mcp.py нет handler для ping (Streamable HTTP keepalive).",
+      "fix": "Примените патч через 1C:Cursor (deploy Syntax) или вручную добавьте ping/cancelled в mcp.py и пересоберите контейнер."
+    },
+    {
+      "id": "syntax-cancelled-missing",
+      "server": "1c-syntax-helper",
+      "title": "Method not found: notifications/cancelled",
+      "symptom": "MCP user-1c-syntax-helper в статусе error",
+      "log_pattern": "Method not found: notifications/cancelled",
+      "cause": "Cursor отправляет notifications/cancelled без id.",
+      "fix": "Добавьте ответ HTTP 200 для notifications/cancelled и notifications/initialized; docker compose build && up -d."
+    },
+    {
+      "id": "searxng-healthcheck-localhost",
+      "server": "searxng",
+      "title": "SearXNG MCP unhealthy (localhost в healthcheck)",
+      "symptom": "docker ps: searxng-mcp (unhealthy), wget connection refused",
+      "log_pattern": "can't connect to remote host|Connection refused",
+      "cause": "Healthcheck внутри контейнера бьёт в localhost (IPv6 ::1), сервер слушает 0.0.0.0.",
+      "fix": "В compose healthcheck используйте http://127.0.0.1:<port>/health — перегенерируйте compose в 1C:Cursor."
+    },
+    {
+      "id": "searxng-econnrefused",
+      "server": "searxng",
+      "title": "ECONNREFUSED на порту MCP",
+      "symptom": "connect ECONNREFUSED 127.0.0.1",
+      "log_pattern": "ECONNREFUSED",
+      "cause": "Контейнер не запущен, порт занят другим процессом или параллельный docker compose run.",
+      "fix": "docker compose up -d в каталоге searxng; удалите осиротевшие контейнеры mcp-searxng без published ports."
+    },
+    {
+      "id": "legacy-compose",
+      "server": "searxng",
+      "title": "depends on undefined service core",
+      "symptom": "invalid compose project / undefined service",
+      "log_pattern": "depends on undefined service",
+      "cause": "Запуск устаревшего ~/DockerMCP/docker-compose.yml (stdio-профиль).",
+      "fix": "Используйте только ~/DockerMCP/searxng/ и ~/DockerMCP/1c-syntax/. Не вызывайте корневой compose."
+    },
+    {
+      "id": "syntax-es-startup",
+      "server": "1c-syntax-helper",
+      "title": "Elasticsearch не готов",
+      "symptom": "MCP контейнер ждёт ES, health starting",
+      "log_pattern": "Connection refused.*9200|cluster_block_exception",
+      "cause": "ES стартует дольше 60–120 с или не хватает RAM.",
+      "fix": "Увеличьте ES_JAVA_OPTS и mem_limit в настройках ресурсов; подождите index/status completed."
+    },
+    {
+      "id": "syntax-hbk-missing",
+      "server": "1c-syntax-helper",
+      "title": "HBK не найден",
+      "symptom": "Ошибка индексации справки / пустой hbk",
+      "log_pattern": "hbk|shcntx_ru",
+      "cause": "Не указан shcntx_ru.hbk или неверный bind mount.",
+      "fix": "Укажите путь к shcntx_ru.hbk в UI §2; mount — каталог файла, без копирования в репозиторий."
+    },
+    {
+      "id": "transport-error",
+      "server": null,
+      "title": "transport_error / conn=failed",
+      "symptom": "V2 FSM connection transport_error",
+      "log_pattern": "transport_error|conn=failed",
+      "cause": "MCP endpoint недоступен или протокол не соответствует ожиданиям Cursor.",
+      "fix": "Проверьте curl health и MCP ping; Refresh MCP в Cursor Settings."
+    }
+  ]
+}
