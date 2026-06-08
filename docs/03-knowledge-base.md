@@ -67,6 +67,23 @@
 
 ## Docker профиля
 
+### SSL / PyPI при сборке образа
+
+Если в логе сборки `SSLError` / `UNEXPECTED_EOF_WHILE_READING` на `/simple/pip/` — нестабильный HTTPS из контейнера Docker к PyPI (VPN, фильтр, сеть).
+
+1. Пересоберите с актуальным Dockerfile (без `pip install --upgrade pip`).
+2. Задайте зеркало в `data/settings.json`:
+
+```json
+"docker": {
+  "pip_index_url": "https://mirror.yandex.ru/mirrors/pypi/simple/",
+  "pip_trusted_host": "mirror.yandex.ru"
+}
+```
+
+3. Или перед сборкой: `export PIP_INDEX_URL=...` и `PIP_TRUSTED_HOST=...`.
+4. На время сборки отключите VPN / HTTPS-инспекцию антивируса.
+
 - Compose генерируется в `{docker_root}/1c-kb-<profile>/` (default `~/DockerMCP/1c-kb-<profile>/`)
 - Образ: `1c-kb-<profile>-mcp:latest`
 - Контейнер: `1c-kb-<profile>-mcp`, порт **83xx:8000**

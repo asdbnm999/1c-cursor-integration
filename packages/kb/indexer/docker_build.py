@@ -168,6 +168,33 @@ def has_build_history(profile_name: str) -> bool:
     return _build_meta_path(profile_name).exists()
 
 
+def resolve_pip_build_config() -> tuple[str, str]:
+    """PIP mirror для docker build: env → data/settings.json → docker.pip_*."""
+    pip_index = os.environ.get("PIP_INDEX_URL", "").strip()
+    pip_trusted = os.environ.get("PIP_TRUSTED_HOST", "").strip()
+    if pip_index and pip_trusted:
+        return pip_index, pip_trusted
+    try:
+        from web.settings import load_settings
+
+        docker_cfg = load_settings().get("docker") or {}
+        pip_index = pip_index or str(docker_cfg.get("pip_index_url") or "").strip()
+        pip_trusted = pip_trusted or str(docker_cfg.get("pip_trusted_host") or "").strip()
+    except Exception:
+        pass
+    return pip_index, pip_trusted
+
+
+def pip_ssl_build_hint() -> str:
+    return (
+        "Подсказка: SSL-ошибки PyPI в Docker — задайте зеркало в data/settings.json:\n"
+        '  "docker": { "pip_index_url": "https://mirror.yandex.ru/mirrors/pypi/simple/", '
+        '"pip_trusted_host": "mirror.yandex.ru" }\n'
+        "или экспортируйте PIP_INDEX_URL / PIP_TRUSTED_HOST перед сборкой. "
+        "Также отключите VPN/фильтр HTTPS на время сборки."
+    )
+
+
 def run_docker_build_cli(
     *,
     image: str,
@@ -187,10 +214,9 @@ def run_docker_build_cli(
         "-f",
         str(dockerfile),
     ]
-    pip_index = os.environ.get("PIP_INDEX_URL", "").strip()
+    pip_index, pip_trusted = resolve_pip_build_config()
     if pip_index:
         cmd.extend(["--build-arg", f"PIP_INDEX_URL={pip_index}"])
-    pip_trusted = os.environ.get("PIP_TRUSTED_HOST", "").strip()
     if pip_trusted:
         cmd.extend(["--build-arg", f"PIP_TRUSTED_HOST={pip_trusted}"])
     cmd.append(str(PROJECT_ROOT))
@@ -276,6 +302,10 @@ def _run_build(profile_name: str, force: bool) -> None:
             error=str(exc),
         )
         _append_log(profile_name, traceback.format_exc())
+        state = _get_state_unlocked(profile_name)
+        log_text = "\n".join(state.log_lines)
+        if "SSLError" in log_text or "UNEXPECTED_EOF_WHILE_READING" in log_text:
+            _append_log(profile_name, pip_ssl_build_hint())
     finally:
         with _lock:
             _active_build_profile = None

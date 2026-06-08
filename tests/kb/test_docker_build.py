@@ -1,4 +1,9 @@
-from packages.kb.indexer.docker_build import DockerBuildState, has_build_history, image_exists
+from packages.kb.indexer.docker_build import (
+    DockerBuildState,
+    has_build_history,
+    image_exists,
+    resolve_pip_build_config,
+)
 from packages.kb.indexer.docker_names import container_name, image_name
 
 
@@ -40,6 +45,35 @@ def test_to_dict_includes_profile_image(monkeypatch):
     assert data["image"] == "1c-kb-testbase-mcp"
     assert data["image_exists"] is False
     assert data["build_history"] is False
+
+
+def test_resolve_pip_build_config_from_settings(monkeypatch):
+    monkeypatch.delenv("PIP_INDEX_URL", raising=False)
+    monkeypatch.delenv("PIP_TRUSTED_HOST", raising=False)
+
+    import web.settings as settings_mod
+
+    monkeypatch.setattr(
+        settings_mod,
+        "load_settings",
+        lambda: {
+            "docker": {
+                "pip_index_url": "https://mirror.example/simple/",
+                "pip_trusted_host": "mirror.example",
+            }
+        },
+    )
+    index, trusted = resolve_pip_build_config()
+    assert index == "https://mirror.example/simple/"
+    assert trusted == "mirror.example"
+
+
+def test_resolve_pip_build_config_env_overrides_settings(monkeypatch):
+    monkeypatch.setenv("PIP_INDEX_URL", "https://pypi.org/simple")
+    monkeypatch.setenv("PIP_TRUSTED_HOST", "pypi.org")
+    index, trusted = resolve_pip_build_config()
+    assert index == "https://pypi.org/simple"
+    assert trusted == "pypi.org"
 
 
 def test_image_exists_uses_profile_image(monkeypatch):
