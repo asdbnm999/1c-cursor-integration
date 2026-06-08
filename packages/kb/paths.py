@@ -21,6 +21,7 @@ PROFILES_DIR = PROJECT_ROOT / "profiles"
 DATA_PROFILES_DIR = PROJECT_ROOT / "data" / "profiles"
 HF_CACHE_DIR = PROJECT_ROOT / "data" / "hf_cache"
 
-# Зеркало PyPI для docker build (по умолчанию, без правок settings.json).
-DEFAULT_PIP_INDEX_URL = "https://mirror.yandex.ru/mirrors/pypi/simple/"
-DEFAULT_PIP_TRUSTED_HOST = "mirror.yandex.ru"
+# PyPI для docker build: основной индекс + запасное зеркало.
+DEFAULT_PIP_INDEX_URL = "https://pypi.org/simple"
+DEFAULT_PIP_EXTRA_INDEX_URL = "https://mirror.yandex.ru/mirrors/pypi/simple/"
+DEFAULT_PIP_TRUSTED_HOST = "pypi.org files.pythonhosted.org mirror.yandex.ru"

@@ -71,8 +71,9 @@
 
 По умолчанию (без ручной настройки):
 
-- `setuptools` / `wheel` / `certifi` ставятся **офлайн** из `packages/kb/docker/bootstrap-wheels/`.
-- Остальные зависимости — через зеркало **mirror.yandex.ru** (в Dockerfile и `data/settings.json.example`).
+- `setuptools` / `wheel` / `certifi` — **офлайн** из `bootstrap-wheels/`.
+- Зависимости MCP — из `requirements-kb-mcp.txt` (без Flask); основной индекс **pypi.org**, запасной — **mirror.yandex.ru**.
+- Пакет `1c-cursor` — `pip install --no-deps -e .` (только entry point `1c-cursor-kb-mcp`).
 
 Первая сборка: **15–30 мин** (torch, chromadb). Включите «Пересобрать образ» после `git pull`.
 

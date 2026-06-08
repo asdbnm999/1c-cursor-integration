@@ -63,28 +63,33 @@ def test_resolve_pip_build_config_from_settings(monkeypatch):
             }
         },
     )
-    index, trusted = resolve_pip_build_config()
+    index, extra, trusted = resolve_pip_build_config()
     assert index == "https://mirror.example/simple/"
+    assert extra == "https://mirror.yandex.ru/mirrors/pypi/simple/"
     assert trusted == "mirror.example"
 
 
 def test_resolve_pip_build_config_env_overrides_settings(monkeypatch):
     monkeypatch.setenv("PIP_INDEX_URL", "https://pypi.org/simple")
+    monkeypatch.setenv("PIP_EXTRA_INDEX_URL", "https://mirror.example/simple/")
     monkeypatch.setenv("PIP_TRUSTED_HOST", "pypi.org")
-    index, trusted = resolve_pip_build_config()
+    index, extra, trusted = resolve_pip_build_config()
     assert index == "https://pypi.org/simple"
+    assert extra == "https://mirror.example/simple/"
     assert trusted == "pypi.org"
 
 
 def test_resolve_pip_build_config_has_builtin_default(monkeypatch):
     monkeypatch.delenv("PIP_INDEX_URL", raising=False)
+    monkeypatch.delenv("PIP_EXTRA_INDEX_URL", raising=False)
     monkeypatch.delenv("PIP_TRUSTED_HOST", raising=False)
     import web.settings as settings_mod
 
     monkeypatch.setattr(settings_mod, "load_settings", lambda: {"docker": {}})
-    index, trusted = resolve_pip_build_config()
-    assert "mirror.yandex.ru" in index
-    assert trusted == "mirror.yandex.ru"
+    index, extra, trusted = resolve_pip_build_config()
+    assert index == "https://pypi.org/simple"
+    assert "mirror.yandex.ru" in extra
+    assert "pypi.org" in trusted
 
 
 def test_image_exists_uses_profile_image(monkeypatch):

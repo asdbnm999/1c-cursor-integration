@@ -11,7 +11,11 @@ from enum import Enum
 from pathlib import Path
 
 from packages.kb.indexer.docker_manager import PROJECT_ROOT, _get_client
-from packages.kb.paths import DEFAULT_PIP_INDEX_URL, DEFAULT_PIP_TRUSTED_HOST
+from packages.kb.paths import (
+    DEFAULT_PIP_EXTRA_INDEX_URL,
+    DEFAULT_PIP_INDEX_URL,
+    DEFAULT_PIP_TRUSTED_HOST,
+)
 from packages.kb.indexer.docker_names import image_name
 from packages.kb.indexer.profiles import slugify
 
@@ -169,30 +173,32 @@ def has_build_history(profile_name: str) -> bool:
     return _build_meta_path(profile_name).exists()
 
 
-def resolve_pip_build_config() -> tuple[str, str]:
-    """PIP mirror: env → settings.json → встроенное зеркало по умолчанию."""
+def resolve_pip_build_config() -> tuple[str, str, str]:
+    """PIP: env → settings.json → PyPI + запасное зеркало по умолчанию."""
     pip_index = os.environ.get("PIP_INDEX_URL", "").strip()
+    pip_extra = os.environ.get("PIP_EXTRA_INDEX_URL", "").strip()
     pip_trusted = os.environ.get("PIP_TRUSTED_HOST", "").strip()
     try:
         from web.settings import load_settings
 
         docker_cfg = load_settings().get("docker") or {}
         pip_index = pip_index or str(docker_cfg.get("pip_index_url") or "").strip()
+        pip_extra = pip_extra or str(docker_cfg.get("pip_extra_index_url") or "").strip()
         pip_trusted = pip_trusted or str(docker_cfg.get("pip_trusted_host") or "").strip()
     except Exception:
         pass
     return (
         pip_index or DEFAULT_PIP_INDEX_URL,
+        pip_extra or DEFAULT_PIP_EXTRA_INDEX_URL,
         pip_trusted or DEFAULT_PIP_TRUSTED_HOST,
     )
 
 
 def pip_ssl_build_hint() -> str:
     return (
-        "Подсказка: SSL к PyPI в Docker. По умолчанию используется зеркало mirror.yandex.ru. "
-        "Обновите код (git pull) и пересоберите образ. "
-        "Если ошибка повторится — отключите VPN/HTTPS-фильтр на время сборки "
-        "или задайте другое зеркало в data/settings.json → docker.pip_index_url."
+        "Подсказка: сбой загрузки пакетов в Docker. По умолчанию: pypi.org + зеркало Yandex. "
+        "Обновите код (git pull), включите «Пересобрать образ». "
+        "При SSL — отключите VPN/HTTPS-фильтр на время сборки."
     )
 
 
@@ -215,9 +221,9 @@ def run_docker_build_cli(
         "-f",
         str(dockerfile),
     ]
-    pip_index, pip_trusted = resolve_pip_build_config()
+    pip_index, pip_extra, _pip_trusted = resolve_pip_build_config()
     cmd.extend(["--build-arg", f"PIP_INDEX_URL={pip_index}"])
-    cmd.extend(["--build-arg", f"PIP_TRUSTED_HOST={pip_trusted}"])
+    cmd.extend(["--build-arg", f"PIP_EXTRA_INDEX_URL={pip_extra}"])
     cmd.append(str(PROJECT_ROOT))
     emit(f"$ {' '.join(cmd)}")
 

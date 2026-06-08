@@ -1,0 +1,12 @@
+# Зависимости MCP-контейнера KB (без Flask/веб-UI). Синхронизировать с [project.optional-dependencies].kb + pyyaml, httpx.
+mcp>=1.0.0
+chromadb>=0.5.0
+sentence-transformers>=3.0.0
+lxml>=5.0.0
+tiktoken>=0.7.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+docker>=7.0.0
+tqdm>=4.66.0
+pyyaml>=6.0
+httpx>=0.27.0
