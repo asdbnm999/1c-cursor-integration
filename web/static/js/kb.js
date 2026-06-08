@@ -152,8 +152,9 @@ function initDashboard() {
   const dialog = el("dialog-new-profile");
   const form = el("form-new-profile");
   el("btn-new-profile")?.addEventListener("click", () => {
+    if (!dialog) return;
     dialog.showModal();
-    syncFormatFields();
+    requestAnimationFrame(() => syncFormatFields());
   });
   dialog?.querySelectorAll("[data-close]").forEach((b) =>
     b.addEventListener("click", () => dialog.close())

@@ -174,6 +174,7 @@ def get_cursor_mcp_status(
     host_port: int | None = None,
     *,
     docker_running: bool = False,
+    probe: bool = True,
 ) -> CursorMcpState:
     from packages.kb.indexer.cursor_mcp_config import cursor_settings_summary
 
@@ -202,9 +203,9 @@ def get_cursor_mcp_status(
     reachable = False
     reach_message = ""
 
-    if in_mcp_json and entry and entry.get("url"):
+    if probe and in_mcp_json and entry and entry.get("url"):
         reachable, reach_message = probe_mcp_http(str(entry["url"]))
-    elif docker_running:
+    elif probe and docker_running:
         reachable, reach_message = probe_mcp_http(expected_url)
 
     if (

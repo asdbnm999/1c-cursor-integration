@@ -36,6 +36,7 @@ from packages.kb.indexer.exceptions import IndexerError
 from packages.kb.indexer.health import health_for_profile, health_system
 from packages.kb.indexer.incremental import preview_incremental
 from packages.kb.indexer.index_archive import export_index, import_index, repair_imported_profile_identity
+from packages.kb.indexer.index_state import load_manifest
 from packages.kb.indexer.jobs import (
     cancel_job,
     get_job,
@@ -80,6 +81,57 @@ kb_page_bp = Blueprint("kb_page", __name__, url_prefix="/kb")
 kb_api_bp = Blueprint("kb_api", __name__, url_prefix="/kb/api")
 
 
+def _profile_file_count(config, *, full_scan: bool) -> int:
+    if full_scan:
+        try:
+            return len(scan_profile(config))
+        except Exception:
+            return 0
+    try:
+        manifest = load_manifest(config)
+        cached = len(manifest.get("files") or {})
+        if cached:
+            return cached
+    except Exception:
+        pass
+    return 0
+
+
+def _profile_list_item(name: str) -> dict:
+    """Лёгкая карточка для /kb/ — без полного scan_profile и HTTP-probe MCP."""
+    config = load_config(name)
+    job = get_profile_job(name)
+    container = docker_status(name)
+    chunks = 0
+    try:
+        chunks = count_chunks(config)
+    except Exception:
+        pass
+    file_count = _profile_file_count(config, full_scan=False)
+    cursor_mcp = get_cursor_mcp_status(
+        config,
+        container.host_port or config.mcp.port,
+        docker_running=container.running,
+        probe=False,
+    ).to_dict()
+    return {
+        "name": name,
+        "display_name": config.display_name,
+        "format": config.format,
+        "chunks": chunks,
+        "files": file_count,
+        "docker": {"running": container.running},
+        "index_job": _resolve_index_job(name, job, chunks),
+        "workflow": compute_workflow_status(
+            profile_name=name,
+            chunks=chunks,
+            index_job=_resolve_index_job(name, job, chunks),
+            docker_running=container.running,
+            cursor_mcp=cursor_mcp,
+        ),
+    }
+
+
 def _profile_summary(name: str) -> dict:
     repair_imported_profile_identity(name)
     config = load_config(name)
@@ -98,11 +150,7 @@ def _profile_summary(name: str) -> dict:
             config = load_config(name)
         except Exception:
             pass
-    try:
-        scan = scan_profile(config)
-        file_count = len(scan)
-    except Exception:
-        file_count = 0
+    file_count = _profile_file_count(config, full_scan=True)
 
     cursor_mcp = get_cursor_mcp_status(
         config,
@@ -247,7 +295,7 @@ def api_pick_directory():
 
 @kb_api_bp.get("/profiles")
 def api_profiles():
-    return jsonify([_profile_summary(n) for n in list_profiles()])
+    return jsonify([_profile_list_item(n) for n in list_profiles()])
 
 
 @kb_api_bp.post("/profiles")
