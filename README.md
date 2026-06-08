@@ -37,14 +37,21 @@
 ### Установка
 
 ```bash
-cd 1c-cursor
+git clone https://github.com/asdbnm999/1c-cursor-integration.git
+cd 1c-cursor-integration
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[kb,dev]"
 1c-cursor-web
 ```
 
-Браузер откроется автоматически на **http://127.0.0.1:8080** (отключить: `1c-cursor-web --no-browser`).
+Команда `1c-cursor-web` не лежит отдельным файлом в репозитории — она появляется в `.venv/bin/` после `pip install -e` (см. `[project.scripts]` в `pyproject.toml`). Если скрипт не найден, активируйте venv или запустите напрямую:
+
+```bash
+python -m web.app
+```
+
+Браузер откроется автоматически на **http://127.0.0.1:8080** (отключить: `1c-cursor-web --no-browser` или `python -m web.app --no-browser`).
 
 > Для §3 (KB) нужен extra `[kb]`: chromadb, sentence-transformers и др. Команда выше устанавливает всё сразу.
 
@@ -64,7 +71,8 @@ pip install -e ".[kb,dev]"
 
 | Команда | Описание |
 |---------|----------|
-| `1c-cursor-web` | Веб-UI на `:8080` |
+| `1c-cursor-web` | Веб-UI на `:8080` (после `pip install -e`) |
+| `./scripts/run_web.sh` | То же, если venv уже создан |
 | `1c-cursor-kb-index --profile NAME --full` | Полная индексация профиля KB |
 | `1c-cursor-kb-index --profile NAME --incremental` | Инкрементальное обновление |
 | `1c-cursor-kb-index --profile NAME --export backup.tar.gz` | Экспорт с индексами |
