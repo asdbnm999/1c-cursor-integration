@@ -124,7 +124,9 @@ Proprietary — инструмент настройки 1C:Cursor.
 
 ---
 
-## Правообладатели bundled VSIX
+## Правообладатели сторонних компонентов
+
+### Bundled VSIX
 
 Расширения в `assets/extensions/` предоставляются их авторами. Вы можете заменить файлы собственными копиями.
 
@@ -148,3 +150,14 @@ Proprietary — инструмент настройки 1C:Cursor.
 | Display name | Language 1C (BSL) |
 | License | SEE LICENSE IN LICENSE.md |
 | Repository | https://github.com/1c-syntax/vsc-language-1c-bsl |
+
+### 1C Syntax Helper MCP
+
+MCP-сервер справки платформы 1С (раздел §2). При Deploy клонируется в `{docker_root}/1c-syntax/1c-syntax-helper-mcp/`; в репозиторий 1C:Cursor не входит.
+
+| Поле | Значение |
+|------|----------|
+| Компонент | 1C Syntax Helper MCP |
+| Правообладатель | Anton Piskov (GitHub: [Antonio1C](https://github.com/Antonio1C)) |
+| Repository | https://github.com/Antonio1C/1c-syntax-helper-mcp |
+| License | не указана в upstream-репозитории |
