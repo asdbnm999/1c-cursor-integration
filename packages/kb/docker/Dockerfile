@@ -2,15 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Нестабильный PyPI / SSL: увеличенный timeout и retries.
+# Зеркало PyPI по умолчанию (без ручной настройки). Переопределение: --build-arg PIP_INDEX_URL=...
+ARG PIP_INDEX_URL=https://mirror.yandex.ru/mirrors/pypi/simple/
+ARG PIP_TRUSTED_HOST=mirror.yandex.ru
+
 ENV PIP_DEFAULT_TIMEOUT=300 \
     PIP_RETRIES=10 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_PREFER_BINARY=1
-
-ARG PIP_INDEX_URL=
-ARG PIP_TRUSTED_HOST=
-ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_PREFER_BINARY=1 \
+    PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,8 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# pip из python:3.12-slim достаточен. --upgrade pip часто падает по SSL (запрос к /simple/pip/).
-RUN pip install --no-cache-dir "setuptools>=68" wheel certifi
+# Bootstrap без сети: setuptools/wheel/certifi из репозитория (обход SSL к PyPI на первом шаге).
+COPY packages/kb/docker/bootstrap-wheels/ /tmp/bootstrap-wheels/
+RUN pip install --no-cache-dir --no-index --find-links=/tmp/bootstrap-wheels \
+    setuptools wheel certifi \
+    && rm -rf /tmp/bootstrap-wheels
 
 COPY pyproject.toml README.md ./
 COPY packages ./packages

@@ -76,6 +76,17 @@ def test_resolve_pip_build_config_env_overrides_settings(monkeypatch):
     assert trusted == "pypi.org"
 
 
+def test_resolve_pip_build_config_has_builtin_default(monkeypatch):
+    monkeypatch.delenv("PIP_INDEX_URL", raising=False)
+    monkeypatch.delenv("PIP_TRUSTED_HOST", raising=False)
+    import web.settings as settings_mod
+
+    monkeypatch.setattr(settings_mod, "load_settings", lambda: {"docker": {}})
+    index, trusted = resolve_pip_build_config()
+    assert "mirror.yandex.ru" in index
+    assert trusted == "mirror.yandex.ru"
+
+
 def test_image_exists_uses_profile_image(monkeypatch):
     import packages.kb.indexer.docker_build as mod
 

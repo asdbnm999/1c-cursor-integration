@@ -4,10 +4,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# packages/kb/paths.py → parent.parent.parent = корень 1c-cursor
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+def _detect_project_root() -> Path:
+    """Корень репозитория: ближайший каталог с pyproject.toml и web/app.py."""
+    here = Path(__file__).resolve().parent
+    for base in (here, *here.parents):
+        if (base / "pyproject.toml").is_file() and (base / "web" / "app.py").is_file():
+            return base
+    return here.parent.parent.parent
+
+
+PROJECT_ROOT = _detect_project_root()
 KB_PACKAGE_ROOT = Path(__file__).resolve().parent
 DOCKER_DIR = KB_PACKAGE_ROOT / "docker"
 PROFILES_DIR = PROJECT_ROOT / "profiles"
 DATA_PROFILES_DIR = PROJECT_ROOT / "data" / "profiles"
 HF_CACHE_DIR = PROJECT_ROOT / "data" / "hf_cache"
+
+# Зеркало PyPI для docker build (по умолчанию, без правок settings.json).
+DEFAULT_PIP_INDEX_URL = "https://mirror.yandex.ru/mirrors/pypi/simple/"
+DEFAULT_PIP_TRUSTED_HOST = "mirror.yandex.ru"

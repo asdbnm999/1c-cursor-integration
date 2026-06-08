@@ -19,8 +19,8 @@ def _default_settings() -> dict[str, Any]:
         },
         "docker": {
             "root": str(DEFAULT_DOCKER_ROOT),
-            "pip_index_url": "",
-            "pip_trusted_host": "",
+            "pip_index_url": "https://mirror.yandex.ru/mirrors/pypi/simple/",
+            "pip_trusted_host": "mirror.yandex.ru",
         },
         "plugins": {
             "installed": [],

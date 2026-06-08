@@ -67,22 +67,14 @@
 
 ## Docker профиля
 
-### SSL / PyPI при сборке образа
+### Сборка образа KB
 
-Если в логе сборки `SSLError` / `UNEXPECTED_EOF_WHILE_READING` на `/simple/pip/` — нестабильный HTTPS из контейнера Docker к PyPI (VPN, фильтр, сеть).
+По умолчанию (без ручной настройки):
 
-1. Пересоберите с актуальным Dockerfile (без `pip install --upgrade pip`).
-2. Задайте зеркало в `data/settings.json`:
+- `setuptools` / `wheel` / `certifi` ставятся **офлайн** из `packages/kb/docker/bootstrap-wheels/`.
+- Остальные зависимости — через зеркало **mirror.yandex.ru** (в Dockerfile и `data/settings.json.example`).
 
-```json
-"docker": {
-  "pip_index_url": "https://mirror.yandex.ru/mirrors/pypi/simple/",
-  "pip_trusted_host": "mirror.yandex.ru"
-}
-```
-
-3. Или перед сборкой: `export PIP_INDEX_URL=...` и `PIP_TRUSTED_HOST=...`.
-4. На время сборки отключите VPN / HTTPS-инспекцию антивируса.
+Первая сборка: **15–30 мин** (torch, chromadb). Включите «Пересобрать образ» после `git pull`.
 
 - Compose генерируется в `{docker_root}/1c-kb-<profile>/` (default `~/DockerMCP/1c-kb-<profile>/`)
 - Образ: `1c-kb-<profile>-mcp:latest`

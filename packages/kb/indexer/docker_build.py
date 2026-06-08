@@ -11,6 +11,7 @@ from enum import Enum
 from pathlib import Path
 
 from packages.kb.indexer.docker_manager import PROJECT_ROOT, _get_client
+from packages.kb.paths import DEFAULT_PIP_INDEX_URL, DEFAULT_PIP_TRUSTED_HOST
 from packages.kb.indexer.docker_names import image_name
 from packages.kb.indexer.profiles import slugify
 
@@ -169,11 +170,9 @@ def has_build_history(profile_name: str) -> bool:
 
 
 def resolve_pip_build_config() -> tuple[str, str]:
-    """PIP mirror для docker build: env → data/settings.json → docker.pip_*."""
+    """PIP mirror: env → settings.json → встроенное зеркало по умолчанию."""
     pip_index = os.environ.get("PIP_INDEX_URL", "").strip()
     pip_trusted = os.environ.get("PIP_TRUSTED_HOST", "").strip()
-    if pip_index and pip_trusted:
-        return pip_index, pip_trusted
     try:
         from web.settings import load_settings
 
@@ -182,16 +181,18 @@ def resolve_pip_build_config() -> tuple[str, str]:
         pip_trusted = pip_trusted or str(docker_cfg.get("pip_trusted_host") or "").strip()
     except Exception:
         pass
-    return pip_index, pip_trusted
+    return (
+        pip_index or DEFAULT_PIP_INDEX_URL,
+        pip_trusted or DEFAULT_PIP_TRUSTED_HOST,
+    )
 
 
 def pip_ssl_build_hint() -> str:
     return (
-        "Подсказка: SSL-ошибки PyPI в Docker — задайте зеркало в data/settings.json:\n"
-        '  "docker": { "pip_index_url": "https://mirror.yandex.ru/mirrors/pypi/simple/", '
-        '"pip_trusted_host": "mirror.yandex.ru" }\n'
-        "или экспортируйте PIP_INDEX_URL / PIP_TRUSTED_HOST перед сборкой. "
-        "Также отключите VPN/фильтр HTTPS на время сборки."
+        "Подсказка: SSL к PyPI в Docker. По умолчанию используется зеркало mirror.yandex.ru. "
+        "Обновите код (git pull) и пересоберите образ. "
+        "Если ошибка повторится — отключите VPN/HTTPS-фильтр на время сборки "
+        "или задайте другое зеркало в data/settings.json → docker.pip_index_url."
     )
 
 
@@ -215,10 +216,8 @@ def run_docker_build_cli(
         str(dockerfile),
     ]
     pip_index, pip_trusted = resolve_pip_build_config()
-    if pip_index:
-        cmd.extend(["--build-arg", f"PIP_INDEX_URL={pip_index}"])
-    if pip_trusted:
-        cmd.extend(["--build-arg", f"PIP_TRUSTED_HOST={pip_trusted}"])
+    cmd.extend(["--build-arg", f"PIP_INDEX_URL={pip_index}"])
+    cmd.extend(["--build-arg", f"PIP_TRUSTED_HOST={pip_trusted}"])
     cmd.append(str(PROJECT_ROOT))
     emit(f"$ {' '.join(cmd)}")
 
