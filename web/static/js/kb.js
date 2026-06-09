@@ -472,6 +472,8 @@ const PROFILE_HEALTH_MS = 15000;
 const PROFILE_HEALTH_IDLE_MS = 300000;
 const DOCKER_PANEL_MS = 10000;
 const CURSOR_STATUS_POLL_MS = 30000;
+const CURSOR_STATUS_FAST_POLL_MS = 2500;
+const CURSOR_STATUS_FAST_POLL_MAX = 48;
 const PROFILE_RUNTIME_MS = 90000;
 let lastCompareData = null;
 
@@ -1106,9 +1108,12 @@ async function pollCursorStatus(profileName, { full = false } = {}) {
     const q = full ? "?full=1" : "";
     const cursor = await api("/kb/api/profiles/" + profileName + "/mcp/cursor-status" + q);
     updateCursorStepState(cursor);
-    if (cursor.status === "connected" && cursorStatusPoll) {
-      clearInterval(cursorStatusPoll);
-      cursorStatusPoll = null;
+    if (cursor.status === "connected") {
+      stopCursorFastPoll();
+      if (cursorStatusPoll) {
+        clearInterval(cursorStatusPoll);
+        cursorStatusPoll = null;
+      }
     }
     return cursor;
   } catch (e) {
@@ -1116,6 +1121,27 @@ async function pollCursorStatus(profileName, { full = false } = {}) {
     if (line) line.textContent = "Не удалось проверить Cursor: " + e.message;
     return null;
   }
+}
+
+function stopCursorFastPoll() {
+  if (cursorFastPoll) {
+    clearInterval(cursorFastPoll);
+    cursorFastPoll = null;
+  }
+  cursorFastPollAttempts = 0;
+}
+
+/** Ускоренный опрос после записи mcp.json — ждём, пока Cursor подгрузит tools. */
+function startCursorFastPoll(profileName) {
+  stopCursorFastPoll();
+  cursorFastPollAttempts = 0;
+  cursorFastPoll = setInterval(async () => {
+    cursorFastPollAttempts += 1;
+    const cursor = await pollCursorStatus(profileName);
+    if (cursor?.status === "connected" || cursorFastPollAttempts >= CURSOR_STATUS_FAST_POLL_MAX) {
+      stopCursorFastPoll();
+    }
+  }, CURSOR_STATUS_FAST_POLL_MS);
 }
 
 function applyDockerRuntimeState(docker, mcpUrl) {
@@ -1292,6 +1318,8 @@ async function refreshProfileInner(name, force = false) {
 }
 
 let cursorStatusPoll = null;
+let cursorFastPoll = null;
+let cursorFastPollAttempts = 0;
 const MCP_MODE_KEY = "kb_mcp_update_mode";
 
 function getMcpUpdateMode() {
@@ -1750,6 +1778,7 @@ function initProfilePage(name) {
       await refreshProfile(name, { force: true });
       await loadDockerPanel(name);
       await pollCursorStatus(name, { full: true });
+      startCursorFastPoll(name);
     } catch (e) {
       if (!el("docker-launch-progress")?.querySelector(".is-failed")) {
         setStepState("docker", "error", "Ошибка запуска");
@@ -1909,24 +1938,43 @@ function initProfilePage(name) {
       alert("Сначала укажите каталог Cursor");
       return;
     }
+    const applyBtn = el("btn-mcp-apply");
+    const applyBtnLabel = applyBtn?.textContent || "";
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.textContent = "Запись…";
+    }
+    setStepState("cursor", "active", "Запись в mcp.json…");
+    const statusLine = el("cursor-status");
+    if (statusLine) {
+      statusLine.className = "runtime-line";
+      statusLine.textContent = "Запись в mcp.json…";
+    }
     try {
       const data = await api("/kb/api/profiles/" + name + "/mcp/apply", { method: "POST" });
-      const line = el("cursor-status");
-      if (line) {
-        line.className = "runtime-line ok";
+      if (statusLine) {
+        statusLine.className = "runtime-line ok";
         const backup = data.backup_name
           ? ` · бэкап: data/cursor-mcp-backups/${data.backup_name}`
           : "";
-        line.textContent = `Записано в ${data.mcp_json_path}${backup}. Включите сервер в Cursor → Settings → MCP`;
+        statusLine.textContent = `Записано в ${data.mcp_json_path}${backup}. Включите сервер в Cursor → Settings → MCP`;
       }
+      setStepState("cursor", "active", "Включите в Cursor");
       await loadCursorDirSettings();
       await pollCursorStatus(name);
+      startCursorFastPoll(name);
     } catch (e) {
       alert(e.message);
+    } finally {
+      if (applyBtn) {
+        applyBtn.disabled = false;
+        applyBtn.textContent = applyBtnLabel;
+      }
     }
   });
 
   el("btn-cursor-check-auto")?.addEventListener("click", () => {
+    startCursorFastPoll(name);
     pollCursorStatus(name);
   });
 
@@ -2000,6 +2048,9 @@ function initProfilePage(name) {
   });
 
   el("btn-cursor-check")?.addEventListener("click", () => {
+    const line = el("cursor-status");
+    if (line) line.textContent = "Проверка подключения Cursor…";
+    startCursorFastPoll(name);
     pollCursorStatus(name);
   });
 

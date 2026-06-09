@@ -287,7 +287,8 @@ def run_index(
         written=total_chunks,
         files_done=max(processed_done, 1),
     )
-    total_in_collection = count_chunks(config)
+    # force=True: job ещё RUNNING, обычный count_chunks вернёт устаревший progress (0).
+    total_in_collection = count_chunks(config, force=True)
     progress.message = f"Готово: {total_files} файлов, {total_chunks} чанков"
     if on_progress:
         on_progress(progress)

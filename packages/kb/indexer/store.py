@@ -13,9 +13,24 @@ from packages.kb.indexer.exceptions import StoreError
 from packages.kb.indexer.models import Chunk
 
 _client: chromadb.ClientAPI | None = None
+_client_key: str | None = None
 _collection: chromadb.Collection | None = None
 _collection_key: str | None = None
 _store_lock = threading.RLock()
+
+
+def _release_client() -> None:
+    """Закрыть SQLite-соединения Chroma перед сбросом каталога."""
+    global _client
+    if _client is None:
+        return
+    try:
+        close = getattr(_client, "close", None)
+        if callable(close):
+            close()
+    except Exception:
+        pass
+    _client = None
 
 
 def _resolve_store_path(config: ProfileConfig) -> Path:
@@ -31,12 +46,16 @@ def _resolve_store_path(config: ProfileConfig) -> Path:
 
 
 def get_client(config: ProfileConfig) -> chromadb.ClientAPI:
-    global _client, _collection_key
+    global _client, _client_key
     key = str(_resolve_store_path(config))
     with _store_lock:
-        if _client is None or _collection_key != key:
+        if _client is None or _client_key != key:
+            _release_client()
             _client = chromadb.PersistentClient(path=key)
-            _collection_key = key
+            _client_key = key
+            global _collection, _collection_key
+            _collection = None
+            _collection_key = None
         return _client
 
 
@@ -61,9 +80,10 @@ def get_collection(config: ProfileConfig, reset: bool = False) -> chromadb.Colle
 
 
 def reset_store_cache() -> None:
-    global _client, _collection, _collection_key
+    global _client_key, _collection, _collection_key
     with _store_lock:
-        _client = None
+        _release_client()
+        _client_key = None
         _collection = None
         _collection_key = None
 
@@ -81,9 +101,9 @@ def reset_collection_store(config: ProfileConfig) -> chromadb.Collection:
         except OSError:
             pass
         client = chromadb.PersistentClient(path=str(store_path))
-        global _client, _collection, _collection_key
+        global _client, _client_key, _collection, _collection_key
         _client = client
-        _collection_key = str(store_path)
+        _client_key = str(store_path)
         _collection = client.get_or_create_collection(
             name=config.store.collection,
             metadata={"hnsw:space": "cosine"},
@@ -151,7 +171,13 @@ def path_has_chunks(config: ProfileConfig, path: str) -> bool:
     return False
 
 
-def count_chunks(config: ProfileConfig) -> int:
+def count_chunks(config: ProfileConfig, *, force: bool = False) -> int:
+    if not force:
+        from packages.kb.indexer.jobs import JobStatus, get_profile_job
+
+        job = get_profile_job(config.profile_name)
+        if job and job.status in {JobStatus.PENDING, JobStatus.RUNNING}:
+            return int((job.progress or {}).get("chunks_written") or 0)
     with _store_lock:
         return get_collection(config).count()
 
@@ -162,17 +188,19 @@ def query_chunks(
     limit: int = 8,
     where: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    collection = get_collection(config)
-    kwargs: dict[str, Any] = {
-        "query_embeddings": [embedding],
-        "n_results": limit,
-        "include": ["documents", "metadatas", "distances"],
-    }
-    if where:
-        kwargs["where"] = where
-    return collection.query(**kwargs)
+    with _store_lock:
+        collection = get_collection(config)
+        kwargs: dict[str, Any] = {
+            "query_embeddings": [embedding],
+            "n_results": limit,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where:
+            kwargs["where"] = where
+        return collection.query(**kwargs)
 
 
 def get_by_metadata(config: ProfileConfig, where: dict[str, Any]) -> dict[str, Any]:
-    collection = get_collection(config)
-    return collection.get(where=where, include=["documents", "metadatas"])
+    with _store_lock:
+        collection = get_collection(config)
+        return collection.get(where=where, include=["documents", "metadatas"])
