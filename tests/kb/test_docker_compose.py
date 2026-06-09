@@ -28,11 +28,15 @@ def test_render_compose_yaml_contains_profile_and_port():
     config = _sample_config("myprofile", 8305)
     text = render_compose_yaml(config)
     assert "name: 1c-kb-myprofile-mcp" in text
-    assert "packages/kb/docker/Dockerfile" in text
+    assert "image: 1c-kb-myprofile-mcp" in text
     assert "container_name: 1c-kb-myprofile-mcp" in text
     assert '"8305:8000"' in text or "8305:8000" in text
     assert "KB_PROFILE: myprofile" in text
     assert str(PROJECT_ROOT.resolve()) in text
+    assert "healthcheck:" in text
+    assert "profiles:/app/profiles:ro" in text.replace(" ", "")
+    assert "mem_limit:" in text
+    assert "build:" not in text
 
 
 def test_render_compose_yaml_gpu_block():

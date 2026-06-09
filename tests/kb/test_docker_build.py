@@ -3,8 +3,9 @@ from packages.kb.indexer.docker_build import (
     has_build_history,
     image_exists,
     resolve_pip_build_config,
+    tag_profile_image,
 )
-from packages.kb.indexer.docker_names import container_name, image_name
+from packages.kb.indexer.docker_names import SHARED_IMAGE_NAME, container_name, image_name
 
 
 def test_image_name_matches_container_name():
@@ -40,10 +41,13 @@ def test_to_dict_includes_profile_image(monkeypatch):
     import packages.kb.indexer.docker_build as mod
 
     monkeypatch.setattr(mod, "image_exists", lambda _name: False)
+    monkeypatch.setattr(mod, "shared_image_exists", lambda: False)
     monkeypatch.setattr(mod, "has_build_history", lambda _name: False)
     data = DockerBuildState(profile_name="testbase").to_dict()
     assert data["image"] == "1c-kb-testbase-mcp"
+    assert data["shared_image"] == SHARED_IMAGE_NAME
     assert data["image_exists"] is False
+    assert data["shared_image_exists"] is False
     assert data["build_history"] is False
 
 
@@ -90,6 +94,36 @@ def test_resolve_pip_build_config_has_builtin_default(monkeypatch):
     assert index == "https://pypi.org/simple"
     assert "mirror.yandex.ru" in extra
     assert "pypi.org" in trusted
+
+
+def test_shared_image_name_constant():
+    assert SHARED_IMAGE_NAME == "1c-kb-mcp:latest"
+
+
+def test_tag_profile_image_from_shared(monkeypatch):
+    import packages.kb.indexer.docker_build as mod
+
+    tagged: list[str] = []
+
+    class FakeImage:
+        def tag(self, ref: str) -> None:
+            tagged.append(ref)
+
+    class FakeImages:
+        @staticmethod
+        def get(ref: str):
+            if ref == SHARED_IMAGE_NAME:
+                return FakeImage()
+            raise Exception("not found")
+
+    class FakeClient:
+        images = FakeImages
+
+    monkeypatch.setattr(mod, "_docker_image_exists", lambda ref: ref == SHARED_IMAGE_NAME)
+    monkeypatch.setattr(mod, "_get_client", lambda: FakeClient())
+    result = tag_profile_image("demo")
+    assert result == "1c-kb-demo-mcp"
+    assert tagged == ["1c-kb-demo-mcp"]
 
 
 def test_image_exists_uses_profile_image(monkeypatch):

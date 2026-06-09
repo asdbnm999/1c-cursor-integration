@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -126,7 +127,28 @@ def count_cursor_tools(server_name: str) -> int:
     return best
 
 
+def probe_mcp_port(url: str, *, timeout: float = 2.0) -> tuple[bool, str]:
+    """Лёгкая проверка: TCP на порт MCP без JSON-RPC (не создаёт session в логах)."""
+    normalized = normalize_mcp_url(url)
+    if not normalized:
+        return False, "URL не задан"
+    parsed = urlparse(normalized)
+    host = parsed.hostname or "127.0.0.1"
+    if host == "localhost":
+        host = "127.0.0.1"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        try:
+            if sock.connect_ex((host, port)) == 0:
+                return True, f"Порт {port} принимает соединения"
+            return False, f"Порт {port} недоступен"
+        except OSError as exc:
+            return False, str(exc)
+
+
 def probe_mcp_http(url: str, *, timeout: float = 4.0) -> tuple[bool, str]:
+    """Полная проверка MCP: POST initialize (создаёт session — только по запросу пользователя)."""
     normalized = normalize_mcp_url(url)
     if not normalized:
         return False, "URL не задан"
@@ -169,12 +191,22 @@ def probe_mcp_http(url: str, *, timeout: float = 4.0) -> tuple[bool, str]:
     return False, "Неожиданный ответ MCP"
 
 
+def _resolve_probe_mode(probe: bool | str) -> str:
+    if probe is False or probe == "off":
+        return "off"
+    if probe is True or probe == "light":
+        return "light"
+    if probe == "full":
+        return "full"
+    return "light"
+
+
 def get_cursor_mcp_status(
     config: ProfileConfig,
     host_port: int | None = None,
     *,
     docker_running: bool = False,
-    probe: bool = True,
+    probe: bool | str = "light",
 ) -> CursorMcpState:
     from packages.kb.indexer.cursor_mcp_config import cursor_settings_summary
 
@@ -203,18 +235,15 @@ def get_cursor_mcp_status(
     reachable = False
     reach_message = ""
 
-    if probe and in_mcp_json and entry and entry.get("url"):
-        reachable, reach_message = probe_mcp_http(str(entry["url"]))
-    elif probe and docker_running:
-        reachable, reach_message = probe_mcp_http(expected_url)
+    probe_mode = _resolve_probe_mode(probe)
+    if probe_mode != "off":
+        probe_fn = probe_mcp_http if probe_mode == "full" else probe_mcp_port
+        if in_mcp_json and entry and entry.get("url"):
+            reachable, reach_message = probe_fn(str(entry["url"]))
+        elif docker_running:
+            reachable, reach_message = probe_fn(expected_url)
 
-    if (
-        tools_count > 0
-        and in_mcp_json
-        and url_matches
-        and docker_running
-        and reachable
-    ):
+    if tools_count > 0 and in_mcp_json and url_matches:
         return CursorMcpState(
             status=CursorMcpStatus.CONNECTED,
             message=f"Cursor загрузил {tools_count} инструмент(ов) — сервер включён",
@@ -243,19 +272,6 @@ def get_cursor_mcp_status(
             mcp_json_path=mcp_json_path,
         )
 
-    if in_mcp_json and url_matches and reachable:
-        return CursorMcpState(
-            status=CursorMcpStatus.READY,
-            message="Сервер в mcp.json и отвечает. В Cursor: Settings → MCP — включите переключатель",
-            in_mcp_json=True,
-            url_matches=True,
-            mcp_json_url=configured_url,
-            expected_url=expected_url,
-            mcp_reachable=True,
-            cursor_tools_count=tools_count,
-            mcp_json_path=mcp_json_path,
-        )
-
     if in_mcp_json and not url_matches:
         return CursorMcpState(
             status=CursorMcpStatus.MISCONFIGURED,
@@ -272,13 +288,39 @@ def get_cursor_mcp_status(
             mcp_json_path=mcp_json_path,
         )
 
+    if in_mcp_json and url_matches and docker_running:
+        if reachable or probe_mode == "off":
+            return CursorMcpState(
+                status=CursorMcpStatus.READY,
+                message=(
+                    "Сервер в mcp.json"
+                    + (" и отвечает" if reachable else "")
+                    + ". В Cursor: Settings → MCP — включите переключатель"
+                ),
+                in_mcp_json=True,
+                url_matches=True,
+                mcp_json_url=configured_url,
+                expected_url=expected_url,
+                mcp_reachable=reachable,
+                cursor_tools_count=tools_count,
+                mcp_json_path=mcp_json_path,
+            )
+        return CursorMcpState(
+            status=CursorMcpStatus.ERROR,
+            message=f"Контейнер запущен, но MCP не отвечает: {reach_message}",
+            in_mcp_json=True,
+            url_matches=True,
+            mcp_json_url=configured_url,
+            expected_url=expected_url,
+            mcp_reachable=False,
+            cursor_tools_count=tools_count,
+            mcp_json_path=mcp_json_path,
+        )
+
     if in_mcp_json:
         return CursorMcpState(
             status=CursorMcpStatus.CONFIGURED,
-            message=(
-                "Запись в mcp.json есть, но MCP недоступен. "
-                "Запустите Docker-контейнер и проверьте URL"
-            ),
+            message="Запись в mcp.json есть, но URL не задан или не совпадает с профилем",
             in_mcp_json=True,
             url_matches=url_matches,
             mcp_json_url=configured_url,

@@ -1,16 +1,15 @@
+# KB MCP — единый образ для всех профилей (KB_PROFILE в runtime).
 FROM python:3.12-slim
 
 WORKDIR /app
 
 ARG PIP_INDEX_URL=https://pypi.org/simple
-ARG PIP_EXTRA_INDEX_URL=https://mirror.yandex.ru/mirrors/pypi/simple/
+ARG PIP_TRUSTED_HOST=pypi.org
 
 ENV PIP_DEFAULT_TIMEOUT=300 \
     PIP_RETRIES=10 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_PREFER_BINARY=1 \
-    PIP_INDEX_URL=${PIP_INDEX_URL} \
-    PIP_EXTRA_INDEX_URL=${PIP_EXTRA_INDEX_URL}
+    PIP_PREFER_BINARY=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -18,27 +17,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Bootstrap без сети (setuptools/wheel/certifi).
-COPY packages/kb/docker/bootstrap-wheels/ /tmp/bootstrap-wheels/
-RUN pip install --no-cache-dir --no-index --find-links=/tmp/bootstrap-wheels \
-    setuptools wheel certifi \
-    && rm -rf /tmp/bootstrap-wheels
+# Bootstrap pip (малые пакеты; основные deps — офлайн из wheels на хосте).
+RUN pip install --no-cache-dir setuptools wheel certifi \
+    --index-url "${PIP_INDEX_URL}" \
+    --trusted-host "${PIP_TRUSTED_HOST}"
 
-# Только зависимости MCP (без Flask из корневого pyproject).
+COPY packages/kb/docker/wheels-kb-mcp/ /tmp/wheels-kb-mcp/
 COPY packages/kb/docker/requirements-kb-mcp.txt /tmp/requirements-kb-mcp.txt
-COPY packages/kb/docker/install-kb-deps.sh /tmp/install-kb-deps.sh
-RUN chmod +x /tmp/install-kb-deps.sh && /tmp/install-kb-deps.sh && rm -f /tmp/install-kb-deps.sh
+RUN pip install --no-cache-dir --no-index --find-links=/tmp/wheels-kb-mcp \
+    -r /tmp/requirements-kb-mcp.txt \
+    && rm -rf /tmp/wheels-kb-mcp
 
 COPY pyproject.toml README.md ./
 COPY packages ./packages
 
-# Пакет monorepo без повторной установки зависимостей (entry point 1c-cursor-kb-mcp).
 RUN pip install --no-cache-dir --no-deps --no-build-isolation -e .
 
 ENV HF_HOME=/app/data/hf_cache
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+    CMD python -c "import socket; s=socket.socket(); s.settimeout(3); s.connect(('127.0.0.1', 8000)); s.close()"
 
 COPY packages/kb/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

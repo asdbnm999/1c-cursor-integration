@@ -677,6 +677,7 @@ function updateDockerControls(p, buildState = {}) {
   const running = Boolean(docker.running || state.container_running);
   const imageReady = Boolean(state.image_exists ?? docker.image_exists);
   const building = state.status === "building";
+  const buildBlocked = building;
   const composeDir = docker.compose_dir || savedComposeDir;
 
   const reason = {
@@ -684,12 +685,12 @@ function updateDockerControls(p, buildState = {}) {
       ? "Сначала выполните индексацию"
       : running
         ? "Остановите контейнер перед сборкой"
-        : building
+        : buildBlocked
           ? "Дождитесь окончания сборки"
           : "",
     start: !dockerEnabled
       ? "Сначала выполните индексацию"
-      : building
+      : buildBlocked
         ? "Дождитесь окончания сборки"
         : !imageReady
           ? "Сначала нажмите «Собрать образ»"
@@ -711,10 +712,10 @@ function updateDockerControls(p, buildState = {}) {
     btn.title = title || "";
   }
 
-  setBtn("btn-docker-build", !dockerEnabled || building || running, reason.build);
+  setBtn("btn-docker-build", !dockerEnabled || buildBlocked || running, reason.build);
   setBtn(
     "btn-docker-start",
-    !(dockerEnabled && imageReady && composeDir && !running && !building),
+    !(dockerEnabled && imageReady && composeDir && !running && !buildBlocked),
     reason.start
   );
   setBtn("btn-docker-stop", !dockerEnabled || !running, reason.stop);
@@ -722,7 +723,7 @@ function updateDockerControls(p, buildState = {}) {
   setBtn("btn-docker-use-default-compose", !dockerEnabled || running, reason.default);
   const rebuild = el("docker-rebuild");
   if (rebuild) {
-    rebuild.disabled = !dockerEnabled || building || running;
+    rebuild.disabled = !dockerEnabled || buildBlocked || running;
     rebuild.title = reason.build;
   }
 }
@@ -798,6 +799,8 @@ function renderDockerLogBox(state, { autoscroll = true } = {}) {
       lines.push("", "✓ Сборка завершена успешно — конец лога сборки.");
     } else if (state.status === "skipped") {
       lines.push("", "✓ Образ уже был собран — повторная сборка не выполнялась.");
+    } else if (state.status === "interrupted") {
+      lines.push("", "⚠ Сборка прервана — нажмите «Собрать образ» (лучше с «Пересобрать»).");
     }
   } else if (state.image_exists) {
     const imageName = state.image || `1c-kb-${window.__profileName || "profile"}-mcp`;
@@ -817,8 +820,13 @@ function renderDockerLogBox(state, { autoscroll = true } = {}) {
   }
 
   if (state.container_running) {
-    lines.push("", "=== Лог контейнера (docker logs) ===");
-    lines.push(state.container_logs || "(нет вывода)");
+    lines.push("", "=== Контейнер ===");
+    if (state.url) {
+      lines.push(`Запущен. MCP: ${state.url}`);
+    } else {
+      lines.push("Запущен.");
+    }
+    lines.push("Служебный лог MCP (запросы Cursor) в интерфейсе не показывается.");
   }
 
   if (state.compose_dir) {
@@ -849,8 +857,12 @@ function renderDockerLogBox(state, { autoscroll = true } = {}) {
     setStepState("docker", "active", "Сборка образа…");
   } else if (state.container_running) {
     setStepState("docker", "success", "Контейнер работает ✓");
-  } else if (state.status === "failed") {
-    setStepState("docker", "error", "Ошибка сборки");
+  } else if (state.status === "failed" || state.status === "interrupted") {
+    setStepState(
+      "docker",
+      "error",
+      state.status === "interrupted" ? "Сборка прервана — запустите снова" : "Ошибка сборки",
+    );
   } else if (state.status === "completed" || state.status === "skipped") {
     setStepState("docker", "active", "Образ готов — запустите контейнер");
   } else if (state.image_exists) {
@@ -869,7 +881,8 @@ function updateDockerLogCollapse(state) {
   if (!wrap) return;
 
   const running = Boolean(state.container_running);
-  const busy = state.status === "building" || state.status === "failed";
+  const busy =
+    state.status === "building" || state.status === "failed" || state.status === "interrupted";
   const collapse = running && !busy;
 
   wrap.classList.toggle("docker-log--running", collapse);
@@ -889,8 +902,8 @@ async function loadDockerPanel(profileName) {
     const merged = {
       ...data.build,
       container_running: data.container_running,
-      container_logs: data.container_logs,
       compose_dir: data.compose_dir,
+      url: data.url,
     };
     lastDockerPanelState = merged;
     renderDockerLogBox(merged);
@@ -918,6 +931,7 @@ async function pollDockerBuild() {
     dockerBuildPoll = null;
     const buildBtn = el("btn-docker-build");
     if (buildBtn) {
+      buildBtn.disabled = false;
       buildBtn.textContent = "Собрать образ";
     }
     if (name) {
@@ -962,10 +976,15 @@ function updateCursorStepState(cursor) {
   }
 }
 
-async function pollCursorStatus(profileName) {
+async function pollCursorStatus(profileName, { full = false } = {}) {
   try {
-    const cursor = await api("/kb/api/profiles/" + profileName + "/mcp/cursor-status");
+    const q = full ? "?full=1" : "";
+    const cursor = await api("/kb/api/profiles/" + profileName + "/mcp/cursor-status" + q);
     updateCursorStepState(cursor);
+    if (cursor.status === "connected" && cursorStatusPoll) {
+      clearInterval(cursorStatusPoll);
+      cursorStatusPoll = null;
+    }
     return cursor;
   } catch (e) {
     const line = el("cursor-status");
@@ -1036,6 +1055,9 @@ async function refreshProfile(name) {
   lastDockerPanelState = dockerPanel || {};
   updateDockerControls(p, dockerPanel);
   updateCursorStepState(p.cursor_mcp);
+  if (p.cursor_mcp?.status !== "connected") {
+    pollCursorStatus(name);
+  }
 }
 
 let cursorStatusPoll = null;
@@ -1455,14 +1477,19 @@ function initProfilePage(name) {
   });
 
   loadDockerPanel(name).then((r) => {
+    const buildBtn = el("btn-docker-build");
     if (r.status === "building" && !dockerBuildPoll) {
+      if (buildBtn) buildBtn.textContent = "Сборка…";
       dockerBuildPoll = setInterval(pollDockerBuild, 2000);
+    } else if (buildBtn && buildBtn.textContent === "Сборка…") {
+      buildBtn.disabled = false;
+      buildBtn.textContent = "Собрать образ";
     }
   });
 
   pollCursorStatus(name);
   if (!cursorStatusPoll) {
-    cursorStatusPoll = setInterval(() => pollCursorStatus(name), 5000);
+    cursorStatusPoll = setInterval(() => pollCursorStatus(name), 30000);
   }
 
   el("btn-docker-start")?.addEventListener("click", async () => {
@@ -1488,10 +1515,13 @@ function initProfilePage(name) {
       }
       setStepState("docker", "active", "Запуск…");
       const rebuild = el("docker-rebuild")?.checked || false;
-      await api("/kb/api/profiles/" + name + "/docker/start", {
+      const startResult = await api("/kb/api/profiles/" + name + "/docker/start", {
         method: "POST",
         body: JSON.stringify({ compose_dir: composeDir, rebuild }),
       });
+      if (startResult.port_auto_assigned && startResult.message) {
+        setStepState("docker", "active", startResult.message);
+      }
       await refreshProfile(name);
       await loadDockerPanel(name);
     } catch (e) {

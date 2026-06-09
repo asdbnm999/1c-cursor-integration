@@ -23,6 +23,8 @@ class ContainerStatus:
     url: str = ""
     compose_dir: str = ""
     error: str = ""
+    port_auto_assigned: bool = False
+    previous_port: int | None = None
 
 
 def _get_client():
@@ -47,15 +49,21 @@ def _resolve_compose_dir(config: ProfileConfig) -> Path:
 
 
 def build_image(profile_name: str, force: bool = False) -> str:
-    from packages.kb.indexer.docker_build import image_exists, run_docker_build_cli
+    from packages.kb.indexer.docker_build import (
+        image_exists,
+        run_docker_build_cli,
+        tag_profile_image,
+    )
+    from packages.kb.indexer.docker_wheels import ensure_kb_mcp_wheels
 
-    image = image_name(profile_name)
+    profile_image = image_name(profile_name)
     if not force and image_exists(profile_name):
-        return image
+        return profile_image
 
-    logger.info("Сборка Docker-образа %s...", image)
-    run_docker_build_cli(image=image, log=logger.info)
-    return image
+    logger.info("Сборка общего Docker-образа KB MCP для профиля %s…", profile_name)
+    ensure_kb_mcp_wheels(force=force, log=logger.info)
+    run_docker_build_cli(log=logger.info)
+    return tag_profile_image(profile_name)
 
 
 def get_status(profile_name: str) -> ContainerStatus:
@@ -97,15 +105,27 @@ def start_container(
     if compose_dir:
         save_compose_dir(profile_name, compose_dir)
 
+    from packages.kb.indexer.kb_ports import ensure_profile_host_port
+
+    current = get_status(profile_name)
+    port_auto_assigned = False
+    previous_port: int | None = None
+    if not current.running:
+        config = load_config(profile_name)
+        previous_port = config.mcp.port
+        _new_port, port_auto_assigned = ensure_profile_host_port(profile_name)
+
     config = load_config(profile_name)
     compose_path = _resolve_compose_dir(config)
 
-    if not rebuild:
-        build_image(profile_name, force=False)
+    build_image(profile_name, force=rebuild)
 
     logger.info("Запуск compose-проекта в %s", compose_path)
-    compose_up(compose_path, config, rebuild=rebuild)
-    return get_status(profile_name)
+    compose_up(compose_path, config, rebuild=False)
+    status = get_status(profile_name)
+    status.port_auto_assigned = port_auto_assigned
+    status.previous_port = previous_port if port_auto_assigned else None
+    return status
 
 
 def stop_container(profile_name: str) -> ContainerStatus:

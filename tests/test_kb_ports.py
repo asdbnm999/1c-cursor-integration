@@ -31,7 +31,9 @@ def _sample_config(profile_name: str = "testbase", port: int = 8301) -> ProfileC
 
 def test_allocate_http_port_starts_at_8301():
     with patch("packages.kb.indexer.profiles.list_profiles", return_value=[]):
-        assert allocate_http_port("newprofile") == 8301
+        with patch("web.system_check.is_port_free", return_value=True):
+            with patch("packages.kb.indexer.kb_ports._reserved_kb_ports", return_value=set()):
+                assert allocate_http_port("newprofile") == 8301
 
 
 def test_allocate_http_port_increments_by_index():
@@ -39,8 +41,10 @@ def test_allocate_http_port_increments_by_index():
         "packages.kb.indexer.profiles.list_profiles",
         return_value=["alpha", "beta", "gamma"],
     ):
-        assert allocate_http_port("beta") == 8302
-        assert allocate_http_port("newone") == 8304
+        with patch("web.system_check.is_port_free", return_value=True):
+            with patch("packages.kb.indexer.kb_ports._reserved_kb_ports", return_value=set()):
+                assert allocate_http_port("beta") == 8302
+                assert allocate_http_port("newone") == 8304
 
 
 def test_kb_compose_uses_83xx_and_mcp_naming():

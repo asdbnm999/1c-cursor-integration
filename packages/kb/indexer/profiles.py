@@ -63,8 +63,14 @@ def default_mcp_server_name(profile_name: str) -> str:
 
 
 def allocate_http_port(profile_name: str) -> int:
+    """Предпочтительный порт по индексу профиля; при занятости — сканирование 8301–8399."""
+    from packages.kb.indexer.kb_ports import find_free_kb_port
+
     base = 8301
     existing = list_profiles()
     if profile_name in existing:
-        return base + existing.index(profile_name)
-    return base + len(existing)
+        preferred = base + existing.index(profile_name)
+    else:
+        preferred = base + len(existing)
+    preferred = min(preferred, 8399)
+    return find_free_kb_port(exclude_profile=profile_name, preferred=preferred)

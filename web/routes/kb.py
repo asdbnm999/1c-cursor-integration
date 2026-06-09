@@ -156,6 +156,7 @@ def _profile_summary(name: str) -> dict:
         config,
         container.host_port or config.mcp.port,
         docker_running=container.running,
+        probe=False,
     ).to_dict()
 
     return {
@@ -708,30 +709,23 @@ def api_docker_start(name: str):
             "suggested": str(default_compose_dir(name)),
         }), 400
     try:
-        current = docker_status(name)
-        config = load_config(name)
-        if not current.running:
-            from web.system_check import is_port_free
-
-            host_port = config.mcp.port
-            if not is_port_free(host_port):
-                return jsonify({
-                    "ok": False,
-                    "error": (
-                        f"Порт {host_port} занят. Измените port в настройках профиля "
-                        "или остановите процесс на этом порту."
-                    ),
-                }), 409
         status = start_container(name, compose_dir=compose_dir, rebuild=rebuild)
         config = load_config(name)
-        return jsonify({
+        payload: dict = {
             "ok": True,
             "running": status.running,
             "url": status.url,
             "host_port": status.host_port,
             "container_id": status.container_id,
             "compose_dir": config.docker.compose_dir,
-        })
+            "port_auto_assigned": status.port_auto_assigned,
+        }
+        if status.port_auto_assigned and status.previous_port is not None:
+            payload["previous_port"] = status.previous_port
+            payload["message"] = (
+                f"Порт {status.previous_port} был занят — назначен {status.host_port}."
+            )
+        return jsonify(payload)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -751,11 +745,12 @@ def api_docker_logs(name: str):
     status = docker_status(name)
     config = load_config(name)
     build = get_build_state(name).to_dict()
+    include_logs = request.args.get("logs") in {"1", "true", "yes"}
     return jsonify({
         "ok": True,
         "build": build,
         "container_running": status.running,
-        "container_logs": get_container_logs(name) if status.running else "",
+        "container_logs": get_container_logs(name) if status.running and include_logs else "",
         "url": status.url,
         "container_id": status.container_id,
         "compose_dir": config.docker.compose_dir,
@@ -782,10 +777,12 @@ def api_mcp_cursor_status(name: str):
     try:
         config = load_config(name)
         container = docker_status(name)
+        probe = "full" if request.args.get("full") in {"1", "true", "yes"} else "light"
         state = get_cursor_mcp_status(
             config,
             container.host_port or config.mcp.port,
             docker_running=container.running,
+            probe=probe,
         )
         return jsonify({"ok": True, **state.to_dict()})
     except Exception as exc:

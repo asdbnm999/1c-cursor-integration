@@ -44,16 +44,16 @@ def test_status_connected_when_tools_present(monkeypatch):
     )
     monkeypatch.setattr("packages.kb.indexer.cursor_mcp_status.count_cursor_tools", lambda name: 4)
     monkeypatch.setattr(
-        "packages.kb.indexer.cursor_mcp_status.probe_mcp_http",
-        lambda url, timeout=4.0: (True, "ok"),
+        "packages.kb.indexer.cursor_mcp_status.probe_mcp_port",
+        lambda url, timeout=2.0: (True, "ok"),
     )
 
-    state = get_cursor_mcp_status(config, 8010, docker_running=True)
+    state = get_cursor_mcp_status(config, 8010, docker_running=True, probe="light")
     assert state.status == CursorMcpStatus.CONNECTED
     assert state.cursor_tools_count == 4
 
 
-def test_status_not_connected_when_container_stopped(monkeypatch):
+def test_status_connected_even_when_container_stopped_if_tools_cached(monkeypatch):
     config = _config("1c-kb-testbase")
 
     monkeypatch.setattr(
@@ -61,14 +61,52 @@ def test_status_not_connected_when_container_stopped(monkeypatch):
         lambda name: ({"url": "http://127.0.0.1:8010/mcp"}, "http://127.0.0.1:8010/mcp"),
     )
     monkeypatch.setattr("packages.kb.indexer.cursor_mcp_status.count_cursor_tools", lambda name: 8)
-    monkeypatch.setattr(
-        "packages.kb.indexer.cursor_mcp_status.probe_mcp_http",
-        lambda url, timeout=4.0: (True, "ok"),
-    )
 
-    state = get_cursor_mcp_status(config, 8010, docker_running=False)
+    state = get_cursor_mcp_status(config, 8010, docker_running=False, probe="light")
+    assert state.status == CursorMcpStatus.CONNECTED
+    assert state.cursor_tools_count == 8
+
+
+def test_status_configured_when_container_stopped_without_tools(monkeypatch):
+    config = _config("1c-kb-testbase")
+
+    monkeypatch.setattr(
+        "packages.kb.indexer.cursor_mcp_status.get_server_entry",
+        lambda name: ({"url": "http://127.0.0.1:8010/mcp"}, "http://127.0.0.1:8010/mcp"),
+    )
+    monkeypatch.setattr("packages.kb.indexer.cursor_mcp_status.count_cursor_tools", lambda name: 0)
+
+    state = get_cursor_mcp_status(config, 8010, docker_running=False, probe="light")
     assert state.status == CursorMcpStatus.CONFIGURED
     assert "не запущен" in state.message
+
+
+def test_status_connected_without_probe_when_tools_present(monkeypatch):
+    config = _config("1c-kb-testbase")
+
+    monkeypatch.setattr(
+        "packages.kb.indexer.cursor_mcp_status.get_server_entry",
+        lambda name: ({"url": "http://127.0.0.1:8010/mcp"}, "http://127.0.0.1:8010/mcp"),
+    )
+    monkeypatch.setattr("packages.kb.indexer.cursor_mcp_status.count_cursor_tools", lambda name: 4)
+
+    state = get_cursor_mcp_status(config, 8010, docker_running=True, probe=False)
+    assert state.status == CursorMcpStatus.CONNECTED
+    assert state.cursor_tools_count == 4
+
+
+def test_status_ready_without_probe_when_docker_running(monkeypatch):
+    config = _config("1c-kb-testbase")
+
+    monkeypatch.setattr(
+        "packages.kb.indexer.cursor_mcp_status.get_server_entry",
+        lambda name: ({"url": "http://127.0.0.1:8010/mcp"}, "http://127.0.0.1:8010/mcp"),
+    )
+    monkeypatch.setattr("packages.kb.indexer.cursor_mcp_status.count_cursor_tools", lambda name: 0)
+
+    state = get_cursor_mcp_status(config, 8010, docker_running=True, probe=False)
+    assert state.status == CursorMcpStatus.READY
+    assert "mcp.json" in state.message
 
 
 def test_status_missing_without_config(monkeypatch):
@@ -76,9 +114,9 @@ def test_status_missing_without_config(monkeypatch):
     monkeypatch.setattr("packages.kb.indexer.cursor_mcp_status.get_server_entry", lambda name: (None, ""))
     monkeypatch.setattr("packages.kb.indexer.cursor_mcp_status.count_cursor_tools", lambda name: 0)
     monkeypatch.setattr(
-        "packages.kb.indexer.cursor_mcp_status.probe_mcp_http",
-        lambda url, timeout=4.0: (False, "down"),
+        "packages.kb.indexer.cursor_mcp_status.probe_mcp_port",
+        lambda url, timeout=2.0: (False, "down"),
     )
 
-    state = get_cursor_mcp_status(config, 8010, docker_running=False)
+    state = get_cursor_mcp_status(config, 8010, docker_running=False, probe="light")
     assert state.status == CursorMcpStatus.MISSING
