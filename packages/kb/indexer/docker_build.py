@@ -131,11 +131,9 @@ def shared_image_exists() -> bool:
 
 
 def tag_profile_image(profile_name: str) -> str:
-    """Пометить общий образ тегом профиля (идемпотентно)."""
+    """Пометить общий образ тегом профиля (всегда с актуального shared)."""
     profile_image = image_name(profile_name)
     if not shared_image_exists():
-        return profile_image
-    if _docker_image_exists(profile_image):
         return profile_image
     client = _get_client()
     shared = client.images.get(SHARED_IMAGE_NAME)

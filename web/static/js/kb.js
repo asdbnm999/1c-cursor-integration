@@ -1919,7 +1919,7 @@ function initProfilePage(name) {
       setStepState("docker", "active", "Запуск контейнера…");
       const startResult = await api("/kb/api/profiles/" + name + "/docker/start", {
         method: "POST",
-        body: JSON.stringify({ compose_dir: composeDir, rebuild: false }),
+        body: JSON.stringify({ compose_dir: composeDir, rebuild: false, recreate: force }),
       });
       setDockerLaunchStage("start", "ok", startResult.url || "Контейнер запущен");
       if (startResult.port_auto_assigned && startResult.message) {

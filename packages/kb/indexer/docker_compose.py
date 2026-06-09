@@ -97,6 +97,7 @@ services:
       - "{host_port}:{CONTAINER_PORT}"
     environment:
       KB_PROFILE: {profile_name}
+      PROJECT_ROOT: /app
       HF_HOME: /app/data/hf_cache
     volumes:
       - {project_root / "data"}:/app/data
@@ -151,9 +152,17 @@ def _run_compose(
     )
 
 
-def compose_up(compose_dir: Path, config: ProfileConfig, *, rebuild: bool = False) -> str:
+def compose_up(
+    compose_dir: Path,
+    config: ProfileConfig,
+    *,
+    rebuild: bool = False,
+    recreate: bool = False,
+) -> str:
     write_compose_file(compose_dir, config)
     args = ["up", "-d"]
+    if recreate:
+        args.append("--force-recreate")
     if rebuild:
         args.append("--pull")
         args.append("missing")

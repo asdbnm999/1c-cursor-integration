@@ -6,10 +6,20 @@ from pathlib import Path
 
 
 def _detect_project_root() -> Path:
-    """Корень репозитория: ближайший каталог с pyproject.toml и web/app.py."""
+    """Корень репозитория: pyproject.toml + (web/app.py или packages/kb для Docker MCP)."""
+    import os
+
+    env_root = (os.environ.get("PROJECT_ROOT") or os.environ.get("KB_PROJECT_ROOT") or "").strip()
+    if env_root:
+        return Path(env_root).expanduser().resolve()
+
     here = Path(__file__).resolve().parent
     for base in (here, *here.parents):
-        if (base / "pyproject.toml").is_file() and (base / "web" / "app.py").is_file():
+        if not (base / "pyproject.toml").is_file():
+            continue
+        if (base / "web" / "app.py").is_file():
+            return base
+        if (base / "packages" / "kb").is_dir():
             return base
     return here.parent.parent.parent
 

@@ -758,6 +758,7 @@ def api_docker_start(name: str):
     data = request.get_json(silent=True) or {}
     compose_dir = (data.get("compose_dir") or "").strip()
     rebuild = bool(data.get("rebuild", False))
+    recreate = bool(data.get("recreate", False))
     try:
         require_indexed_profile(name)
     except ValueError as exc:
@@ -776,7 +777,12 @@ def api_docker_start(name: str):
             "suggested": str(default_compose_dir(name)),
         }), 400
     try:
-        status = start_container(name, compose_dir=compose_dir, rebuild=rebuild)
+        status = start_container(
+            name,
+            compose_dir=compose_dir,
+            rebuild=rebuild,
+            recreate=recreate,
+        )
         config = load_config(name)
         payload: dict = {
             "ok": True,

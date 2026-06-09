@@ -100,7 +100,7 @@ def test_shared_image_name_constant():
     assert SHARED_IMAGE_NAME == "1c-kb-mcp:latest"
 
 
-def test_tag_profile_image_from_shared(monkeypatch):
+def test_tag_profile_image_from_shared_when_profile_missing(monkeypatch):
     import packages.kb.indexer.docker_build as mod
 
     tagged: list[str] = []
@@ -120,6 +120,36 @@ def test_tag_profile_image_from_shared(monkeypatch):
         images = FakeImages
 
     monkeypatch.setattr(mod, "_docker_image_exists", lambda ref: ref == SHARED_IMAGE_NAME)
+    monkeypatch.setattr(mod, "_get_client", lambda: FakeClient())
+    result = tag_profile_image("demo")
+    assert result == "1c-kb-demo-mcp"
+    assert tagged == ["1c-kb-demo-mcp"]
+
+
+def test_tag_profile_image_retags_existing_profile(monkeypatch):
+    import packages.kb.indexer.docker_build as mod
+
+    tagged: list[str] = []
+
+    class FakeImage:
+        def tag(self, ref: str) -> None:
+            tagged.append(ref)
+
+    class FakeImages:
+        @staticmethod
+        def get(ref: str):
+            if ref == SHARED_IMAGE_NAME:
+                return FakeImage()
+            raise Exception("not found")
+
+    class FakeClient:
+        images = FakeImages
+
+    monkeypatch.setattr(
+        mod,
+        "_docker_image_exists",
+        lambda ref: ref in {SHARED_IMAGE_NAME, "1c-kb-demo-mcp"},
+    )
     monkeypatch.setattr(mod, "_get_client", lambda: FakeClient())
     result = tag_profile_image("demo")
     assert result == "1c-kb-demo-mcp"

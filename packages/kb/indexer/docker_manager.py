@@ -109,6 +109,7 @@ def start_container(
     *,
     compose_dir: str | Path | None = None,
     rebuild: bool = False,
+    recreate: bool = False,
 ) -> ContainerStatus:
     if compose_dir:
         save_compose_dir(profile_name, compose_dir)
@@ -139,7 +140,7 @@ def start_container(
     compose_path = _resolve_compose_dir(config)
 
     logger.info("Запуск compose-проекта в %s", compose_path)
-    compose_up(compose_path, config, rebuild=False)
+    compose_up(compose_path, config, rebuild=False, recreate=recreate)
     status = get_status(profile_name)
     status.port_auto_assigned = port_auto_assigned
     status.previous_port = previous_port if port_auto_assigned else None
