@@ -168,20 +168,35 @@ project-kb-mcp/
 
 ---
 
-## 7. MCP tools (`mcp_server/server.py`)
+## 7. MCP tools (`packages/kb/mcp_server/server.py`)
+
+**Поверхность: ровно 5 методов.**
 
 | Tool | Описание |
 |------|----------|
-| `search_project` | Семантический / гибридный поиск |
-| `get_object` | Карточка объекта метаданных |
-| `get_module_summary` | Сводка BSL-модуля |
-| `list_subsystems` | Подсистемы из индекса |
-| `find_references` | Ссылки на идентификатор в BSL |
-| `list_object_modules` | Модули объекта |
-| `search_by_subsystem` | Объекты подсистемы |
-| `get_register_movements` | Движения регистра (если проиндексировано) |
+| `search_project` | Семантический / гибридный поиск; в ответе тип совпадения: metadata / bsl / query_text |
+| `get_object` | Карточка объекта; `detail`: brief \| structure \| movements \| posting \| full |
+| `list_by_relation` | Связи: documents_by_register, registers_by_document, references_to_object, objects_in_subsystem |
+| `get_module` | Чтение BSL: `mode` = summary \| procedure \| event \| fragment |
+| `find_references` | Ссылки на идентификатор; `scope`: all \| metadata \| bsl \| queries |
 
-Запуск в контейнере: `KB_PROFILE=<name>` → `entrypoint.sh` → `kb-mcp --transport http --port 8000`.
+### Матрица «вопрос → метод»
+
+| Вопрос | Метод | Параметры |
+|--------|-------|-----------|
+| Где в конфигурации про X? | `search_project` | `query` |
+| Что за объект? | `get_object` | `detail="brief"` |
+| Реквизиты, ТЧ, измерения? | `get_object` | `detail="structure"` |
+| Какие регистры двигает документ? | `get_object` | `detail="movements"` |
+| Как проводится? | `get_object` | `detail="posting"` |
+| Кто двигает регистр? | `list_by_relation` | `documents_by_register` |
+| Где используется имя? | `find_references` | `identifier`, `scope` |
+| Покажи процедуру | `get_module` | `mode="procedure"` или `"event"` |
+| Что в подсистеме? | `list_by_relation` | `objects_in_subsystem` |
+
+**KB-индекс:** `data/profiles/<name>/indexes/kb/index.json` (строится при полной индексации).
+
+Запуск в контейнере: `KB_PROFILE=<name>` → `entrypoint.sh` → `1c-cursor-kb-mcp --transport http --port 8000`.
 
 ---
 

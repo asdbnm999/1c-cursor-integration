@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed (KB MCP)
+
+- Поверхность MCP сведена к **5 методам**: `search_project`, `get_object`, `list_by_relation`, `get_module`, `find_references`
+- Удалены deprecated wrappers: `get_register_movements`, `get_module_summary`, `list_object_modules`, `list_subsystems`, `search_by_subsystem`
+- Документация KB синхронизирована с новым API
+
 ## 1.0.0 — 2026-06-07
 
 Первый релиз **1C:Cursor** — все шаги плана разработки (0–9) завершены.

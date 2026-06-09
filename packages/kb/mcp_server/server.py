@@ -12,21 +12,20 @@ from packages.kb.indexer.exceptions import IndexerError
 from packages.kb.indexer.hybrid_search import hybrid_search
 from packages.kb.indexer.module_reader import read_module
 from packages.kb.indexer.object_detail import get_object_detail
-from packages.kb.indexer.object_modules import list_object_modules as query_object_modules
 from packages.kb.indexer.relations import list_by_relation as query_by_relation
 from packages.kb.indexer.references import find_references as search_references
-from packages.kb.indexer.store import get_by_metadata, query_chunks
+from packages.kb.indexer.store import query_chunks
 
 _config: ProfileConfig | None = None
 _mcp: FastMCP | None = None
 
-PRIMARY_TOOLS = frozenset({
+MCP_TOOLS = (
     "search_project",
     "get_object",
     "list_by_relation",
     "get_module",
     "find_references",
-})
+)
 
 
 def get_config() -> ProfileConfig:
@@ -226,67 +225,6 @@ def _register_tools(mcp: FastMCP) -> None:
                 f"{r['relative_path']}:{r['line']} — `{r['context'][:120]}`"
             )
         return "\n".join(lines)
-
-    # --- Deprecated thin wrappers (переходный период) ---
-
-    @mcp.tool()
-    def get_register_movements(object_type: str, object_name: str) -> str:
-        """DEPRECATED: используйте get_object(..., detail='movements')."""
-        return get_object(object_type=object_type, object_name=object_name, detail="movements")
-
-    @mcp.tool()
-    def get_module_summary(module_path: str) -> str:
-        """DEPRECATED: используйте get_module(mode='summary')."""
-        return get_module(module_path=module_path, mode="summary")
-
-    @mcp.tool()
-    def list_object_modules(object_type: str, object_name: str) -> str:
-        """DEPRECATED: используйте get_object(..., detail='full') или get_module."""
-        config = get_config()
-        try:
-            modules = query_object_modules(config, object_type, object_name)
-        except IndexerError as exc:
-            return f"Ошибка: {exc}"
-        if not modules:
-            return f"Модули для {object_type}.{object_name} не найдены."
-        lines = [f"## Модули {object_type}.{object_name}\n"]
-        for m in modules:
-            lines.append(f"- **{m['name']}** ({m['kind']}): `{m['relative_path']}`")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def list_subsystems(subsystem_name: str = "") -> str:
-        """DEPRECATED: используйте list_by_relation(relation='objects_in_subsystem')."""
-        if subsystem_name:
-            return list_by_relation(
-                relation="objects_in_subsystem",
-                object_name=subsystem_name,
-            )
-        config = get_config()
-        where: dict[str, Any] = {"kind": "subsystem"}
-        results = get_by_metadata(config, where=where)
-        docs = results.get("documents", [])
-        metas = results.get("metadatas", [])
-        if not docs:
-            return "Подсистемы не найдены в индексе."
-        lines = ["## Подсистемы\n"]
-        for doc, meta in zip(docs, metas):
-            lines.append(f"### {meta.get('object_name')}")
-            lines.append(f"- Путь: {meta.get('path')}")
-            if meta.get("parent"):
-                lines.append(f"- Родитель: {meta.get('parent')}")
-            lines.append(doc.split("---", 1)[-1].strip()[:800])
-            lines.append("")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def search_by_subsystem(subsystem_name: str, limit: int = 20) -> str:
-        """DEPRECATED: используйте list_by_relation или search_project с фильтром."""
-        return list_by_relation(
-            relation="objects_in_subsystem",
-            object_name=subsystem_name,
-            limit=limit,
-        )
 
 
 def main(argv: list[str] | None = None) -> None:
