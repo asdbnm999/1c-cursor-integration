@@ -48,6 +48,11 @@ class MetadataObject(BaseModel):
     attributes: list[dict[str, Any]] = Field(default_factory=list)
     tabular_sections: list[dict[str, Any]] = Field(default_factory=list)
     register_records: list[str] = Field(default_factory=list)
+    dimensions: list[dict[str, Any]] = Field(default_factory=list)
+    resources: list[dict[str, Any]] = Field(default_factory=list)
+    register_type: str = ""
+    posting: str = ""
+    real_time_posting: str = ""
     comment: str = ""
     version: str = ""
     raw_xml_summary: str = ""

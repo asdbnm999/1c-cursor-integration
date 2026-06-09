@@ -195,6 +195,49 @@ def _register_records_edt(root: etree._Element) -> list[str]:
     return records
 
 
+def _named_fields_xml_export(
+    obj: etree._Element,
+    tag_name: str,
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    containers = [obj]
+    for child in obj:
+        if _local_name(child.tag) == "ChildObjects":
+            containers.append(child)
+    for container in containers:
+        for node in container:
+            if _local_name(node.tag) != tag_name:
+                continue
+            parsed = _attribute_from_xml_node(node)
+            if parsed:
+                result.append(parsed)
+    return result
+
+
+def _register_type_xml_export(obj: etree._Element) -> str:
+    for child in obj:
+        if _local_name(child.tag) != "Properties":
+            continue
+        for part in child:
+            if _local_name(part.tag) == "RegisterType":
+                return _text(part)
+    return ""
+
+
+def _document_posting_xml_export(props: etree._Element | None) -> tuple[str, str]:
+    posting = ""
+    real_time = ""
+    if props is None:
+        return posting, real_time
+    for part in props:
+        ln = _local_name(part.tag)
+        if ln == "Posting":
+            posting = _text(part)
+        elif ln == "RealTimePosting":
+            real_time = _text(part)
+    return posting, real_time
+
+
 def _register_records_xml_export(obj: etree._Element) -> list[str]:
     records: list[str] = []
     for child in obj.iter():
@@ -295,6 +338,8 @@ def _parse_xml_export(path: Path, source_name: str) -> MetadataObject:
     synonym = ""
     comment = ""
     version = ""
+    posting = ""
+    real_time_posting = ""
     if props is not None:
         for part in props:
             ln = _local_name(part.tag)
@@ -306,6 +351,7 @@ def _parse_xml_export(path: Path, source_name: str) -> MetadataObject:
                 comment = _text(part)
             elif ln == "Version":
                 version = _text(part)
+        posting, real_time_posting = _document_posting_xml_export(props)
 
     return MetadataObject(
         object_type=object_type,
@@ -317,6 +363,11 @@ def _parse_xml_export(path: Path, source_name: str) -> MetadataObject:
         attributes=_attributes_xml_export(obj),
         tabular_sections=_tabular_sections_xml_export(obj),
         register_records=_register_records_xml_export(obj),
+        dimensions=_named_fields_xml_export(obj, "Dimension"),
+        resources=_named_fields_xml_export(obj, "Resource"),
+        register_type=_register_type_xml_export(obj),
+        posting=posting,
+        real_time_posting=real_time_posting,
         comment=comment,
         version=version,
         raw_xml_summary=etree.tostring(obj, encoding="unicode")[:2000],

@@ -40,7 +40,13 @@ def build_metadata_snapshot(config: ProfileConfig) -> Path:
             "synonym": obj.synonym,
             "attributes_count": len(obj.attributes),
             "attributes": obj.attributes,
+            "tabular_sections": obj.tabular_sections,
             "register_records": list(obj.register_records),
+            "dimensions": obj.dimensions,
+            "resources": obj.resources,
+            "register_type": obj.register_type,
+            "posting": obj.posting,
+            "real_time_posting": obj.real_time_posting,
             "path": obj.path,
         }
 

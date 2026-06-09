@@ -9,14 +9,24 @@ from mcp.server.fastmcp import FastMCP
 from packages.kb.indexer.config import ProfileConfig, load_config
 from packages.kb.indexer.embeddings import embed_query
 from packages.kb.indexer.exceptions import IndexerError
-from packages.kb.indexer.extract_bsl import extract_bsl_procedures
 from packages.kb.indexer.hybrid_search import hybrid_search
+from packages.kb.indexer.module_reader import read_module
+from packages.kb.indexer.object_detail import get_object_detail
 from packages.kb.indexer.object_modules import list_object_modules as query_object_modules
+from packages.kb.indexer.relations import list_by_relation as query_by_relation
 from packages.kb.indexer.references import find_references as search_references
 from packages.kb.indexer.store import get_by_metadata, query_chunks
 
 _config: ProfileConfig | None = None
 _mcp: FastMCP | None = None
+
+PRIMARY_TOOLS = frozenset({
+    "search_project",
+    "get_object",
+    "list_by_relation",
+    "get_module",
+    "find_references",
+})
 
 
 def get_config() -> ProfileConfig:
@@ -45,6 +55,20 @@ def _score_from_distance(distance: float | None) -> float:
     return round(max(0.0, 1.0 - distance), 3)
 
 
+def _match_type(meta: dict[str, Any], snippet: str) -> str:
+    kind = meta.get("kind", "")
+    if kind == "metadata" or kind == "subsystem":
+        return "metadata"
+    if kind in ("bsl_procedure", "bsl_module_header"):
+        upper = snippet.upper()
+        if "ВЫБРАТЬ" in upper or "ЗАПРОС.ТЕКСТ" in upper or "РЕГИСТРНАКОПЛЕНИЯ" in upper:
+            return "query_text"
+        return "bsl"
+    if "ВЫБРАТЬ" in snippet.upper():
+        return "query_text"
+    return "metadata"
+
+
 def format_search_results(results: dict[str, Any], limit: int) -> str:
     docs = results.get("documents", [[]])[0]
     metas = results.get("metadatas", [[]])[0]
@@ -58,21 +82,22 @@ def format_search_results(results: dict[str, Any], limit: int) -> str:
         object_type = meta.get("object_type", "?")
         object_name = meta.get("object_name", meta.get("module", "?"))
         path = meta.get("path", "?")
-        kind = meta.get("kind", "?")
         procedure = meta.get("procedure", "")
+        snippet = doc.split("---", 1)[-1].strip()
+        mtype = _match_type(meta, snippet)
 
         title = f"{object_type}.{object_name}"
         if procedure:
             title += f".{procedure}"
 
         lines.append(f"### {idx}. score={score} | {title}")
-        lines.append(f"- Тип чанка: {kind}")
+        lines.append(f"- Тип совпадения: {mtype}")
+        lines.append(f"- Тип чанка: {meta.get('kind', '?')}")
         lines.append(f"- Путь: {path}")
         if meta.get("subsystems"):
             lines.append(f"- Подсистема: {meta.get('subsystems')}")
         if meta.get("is_export"):
             lines.append("- Экспорт: да")
-        snippet = doc.split("---", 1)[-1].strip()
         if len(snippet) > 600:
             snippet = snippet[:600] + "..."
         lines.append(f"- Фрагмент:\n```\n{snippet}\n```\n")
@@ -89,33 +114,18 @@ def format_hybrid_results(hits: list[dict[str, Any]], limit: int) -> str:
         score = round(hit.get("combined_score", 0), 3)
         object_type = meta.get("object_type", "?")
         object_name = meta.get("object_name", meta.get("module", "?"))
+        snippet = doc.split("---", 1)[-1].strip()
+        mtype = _match_type(meta, snippet)
         title = f"{object_type}.{object_name}"
         lines.append(
             f"### {idx}. score={score} (vec={round(hit.get('vector_score', 0), 2)}, "
             f"kw={round(hit.get('keyword_score', 0), 2)}) | {title}"
         )
+        lines.append(f"- Тип совпадения: {mtype}")
         lines.append(f"- Путь: {meta.get('path', '?')}")
-        snippet = doc.split("---", 1)[-1].strip()
         if len(snippet) > 600:
             snippet = snippet[:600] + "..."
         lines.append(f"- Фрагмент:\n```\n{snippet}\n```\n")
-    return "\n".join(lines)
-
-
-def format_object_card(results: dict[str, Any]) -> str:
-    docs = results.get("documents", [])
-    metas = results.get("metadatas", [])
-    if not docs:
-        return "Объект не найден в базе знаний."
-    lines = ["## Карточка объекта\n"]
-    for doc, meta in zip(docs, metas):
-        lines.append(f"### {meta.get('object_type')}.{meta.get('object_name')}")
-        lines.append(f"- Путь: {meta.get('path')}")
-        if meta.get("subsystems"):
-            lines.append(f"- Подсистемы: {meta.get('subsystems')}")
-        lines.append("")
-        lines.append(doc)
-        lines.append("")
     return "\n".join(lines)
 
 
@@ -140,43 +150,120 @@ def _register_tools(mcp: FastMCP) -> None:
         return format_search_results(results, limit)
 
     @mcp.tool()
-    def get_object(object_type: str, object_name: str) -> str:
-        """Карточка объекта метаданных по точному имени."""
+    def get_object(
+        object_type: str,
+        object_name: str,
+        detail: str = "brief",
+    ) -> str:
+        """Карточка объекта метаданных. detail: brief | structure | movements | posting | full."""
         config = get_config()
-        where: dict[str, Any] = {
-            "$and": [
-                {"kind": "metadata"},
-                {"object_type": object_type},
-                {"object_name": object_name},
-            ]
-        }
-        results = get_by_metadata(config, where=where)
-        return format_object_card(results)
+        return get_object_detail(config, object_type, object_name, detail=detail)
+
+    @mcp.tool()
+    def list_by_relation(
+        relation: str,
+        object_type: str = "",
+        object_name: str = "",
+        limit: int = 50,
+    ) -> str:
+        """Связи объектов: documents_by_register, registers_by_document, references_to_object, objects_in_subsystem."""
+        config = get_config()
+        return query_by_relation(
+            config,
+            relation,
+            object_type=object_type,
+            object_name=object_name,
+            limit=limit,
+        )
+
+    @mcp.tool()
+    def get_module(
+        module_path: str,
+        mode: str = "summary",
+        name: str = "",
+        line_from: int = 0,
+        line_to: int = 0,
+    ) -> str:
+        """Чтение BSL-модуля: summary | procedure | event | fragment."""
+        config = get_config()
+        try:
+            return read_module(
+                config,
+                module_path,
+                mode=mode,
+                name=name,
+                line_from=line_from,
+                line_to=line_to,
+            )
+        except IndexerError as exc:
+            return f"Ошибка: {exc}"
+
+    @mcp.tool()
+    def find_references(
+        identifier: str,
+        limit: int = 30,
+        object_type: str = "",
+        scope: str = "all",
+    ) -> str:
+        """Поиск ссылок на идентификатор. scope: all | metadata | bsl | queries."""
+        config = get_config()
+        try:
+            refs = search_references(
+                config,
+                identifier,
+                limit=limit,
+                object_type=object_type,
+                scope=scope,
+            )
+        except IndexerError as exc:
+            return f"Ошибка: {exc}"
+        if not refs:
+            return f"Ссылки на «{identifier}» не найдены (scope={scope})."
+        lines = [f"## Ссылки на «{identifier}» ({len(refs)})\n"]
+        for r in refs:
+            lines.append(
+                f"- [{r.get('file_type', '?')}/{r.get('context_kind', '?')}] "
+                f"{r['relative_path']}:{r['line']} — `{r['context'][:120]}`"
+            )
+        return "\n".join(lines)
+
+    # --- Deprecated thin wrappers (переходный период) ---
+
+    @mcp.tool()
+    def get_register_movements(object_type: str, object_name: str) -> str:
+        """DEPRECATED: используйте get_object(..., detail='movements')."""
+        return get_object(object_type=object_type, object_name=object_name, detail="movements")
 
     @mcp.tool()
     def get_module_summary(module_path: str) -> str:
-        """Сводка по BSL-модулю: заголовок и экспортные процедуры."""
-        procedures = extract_bsl_procedures(module_path)
-        exports = [p for p in procedures if p.is_export]
-        lines = [f"## Модуль: {module_path}", f"Всего процедур/функций: {len(procedures)}", ""]
-        if exports:
-            lines.append("### Экспортные методы")
-            for proc in exports:
-                region = f" [{proc.region}]" if proc.region else ""
-                lines.append(f"- {proc.signature}{region}")
-        else:
-            lines.append("Экспортные методы не найдены.")
+        """DEPRECATED: используйте get_module(mode='summary')."""
+        return get_module(module_path=module_path, mode="summary")
+
+    @mcp.tool()
+    def list_object_modules(object_type: str, object_name: str) -> str:
+        """DEPRECATED: используйте get_object(..., detail='full') или get_module."""
+        config = get_config()
+        try:
+            modules = query_object_modules(config, object_type, object_name)
+        except IndexerError as exc:
+            return f"Ошибка: {exc}"
+        if not modules:
+            return f"Модули для {object_type}.{object_name} не найдены."
+        lines = [f"## Модули {object_type}.{object_name}\n"]
+        for m in modules:
+            lines.append(f"- **{m['name']}** ({m['kind']}): `{m['relative_path']}`")
         return "\n".join(lines)
 
     @mcp.tool()
     def list_subsystems(subsystem_name: str = "") -> str:
-        """Список подсистем и входящих объектов из индекса."""
+        """DEPRECATED: используйте list_by_relation(relation='objects_in_subsystem')."""
+        if subsystem_name:
+            return list_by_relation(
+                relation="objects_in_subsystem",
+                object_name=subsystem_name,
+            )
         config = get_config()
-        where: dict[str, Any] = (
-            {"$and": [{"kind": "subsystem"}, {"object_name": subsystem_name}]}
-            if subsystem_name
-            else {"kind": "subsystem"}
-        )
+        where: dict[str, Any] = {"kind": "subsystem"}
         results = get_by_metadata(config, where=where)
         docs = results.get("documents", [])
         metas = results.get("metadatas", [])
@@ -193,93 +280,13 @@ def _register_tools(mcp: FastMCP) -> None:
         return "\n".join(lines)
 
     @mcp.tool()
-    def find_references(identifier: str, limit: int = 30, object_type: str = "") -> str:
-        """Поиск ссылок на идентификатор (процедура, регистр, документ) в BSL-модулях."""
-        config = get_config()
-        try:
-            refs = search_references(config, identifier, limit=limit, object_type=object_type)
-        except IndexerError as exc:
-            return f"Ошибка: {exc}"
-        if not refs:
-            return f"Ссылки на «{identifier}» не найдены."
-        lines = [f"## Ссылки на «{identifier}» ({len(refs)})\n"]
-        for r in refs:
-            lines.append(f"- {r['relative_path']}:{r['line']} — `{r['context'][:120]}`")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def list_object_modules(object_type: str, object_name: str) -> str:
-        """Список BSL-модулей объекта метаданных."""
-        config = get_config()
-        try:
-            modules = query_object_modules(config, object_type, object_name)
-        except IndexerError as exc:
-            return f"Ошибка: {exc}"
-        if not modules:
-            return f"Модули для {object_type}.{object_name} не найдены."
-        lines = [f"## Модули {object_type}.{object_name}\n"]
-        for m in modules:
-            lines.append(f"- **{m['name']}** ({m['kind']}): `{m['relative_path']}`")
-        return "\n".join(lines)
-
-    @mcp.tool()
     def search_by_subsystem(subsystem_name: str, limit: int = 20) -> str:
-        """Поиск объектов и чанков, относящихся к подсистеме."""
-        config = get_config()
-        collection_results = get_by_metadata(
-            config,
-            where={"kind": "subsystem", "object_name": subsystem_name},
+        """DEPRECATED: используйте list_by_relation или search_project с фильтром."""
+        return list_by_relation(
+            relation="objects_in_subsystem",
+            object_name=subsystem_name,
+            limit=limit,
         )
-        docs = collection_results.get("documents", [])
-        if not docs:
-            return f"Подсистема «{subsystem_name}» не найдена в индексе."
-
-        lines = [f"## Подсистема: {subsystem_name}\n", docs[0].split("---", 1)[-1].strip()[:1000], ""]
-
-        all_data = get_by_metadata(config, where={"kind": "metadata"})
-        metas = all_data.get("metadatas", [])
-        all_docs = all_data.get("documents", [])
-        matched = 0
-        for doc, meta in zip(all_docs, metas):
-            subs = meta.get("subsystems", "")
-            if subsystem_name in subs.split(","):
-                matched += 1
-                if matched <= limit:
-                    lines.append(f"- {meta.get('object_type')}.{meta.get('object_name')}")
-        lines.append(f"\nВсего объектов в подсистеме: {matched}")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def get_register_movements(object_type: str, object_name: str) -> str:
-        """Движения по регистрам для документа/объекта из индекса метаданных."""
-        config = get_config()
-        where: dict[str, Any] = {
-            "$and": [
-                {"kind": "metadata"},
-                {"object_type": object_type},
-                {"object_name": object_name},
-            ]
-        }
-        results = get_by_metadata(config, where=where)
-        docs = results.get("documents", [])
-        metas = results.get("metadatas", [])
-        if not docs:
-            return f"Объект {object_type}.{object_name} не найден."
-
-        meta = metas[0] if metas else {}
-        records_raw = meta.get("register_records", "")
-        if records_raw:
-            records = [r.strip() for r in str(records_raw).split(",") if r.strip()]
-            if records:
-                lines = [f"## Движения по регистрам: {object_type}.{object_name}\n"]
-                lines.extend(f"- {r}" for r in records)
-                return "\n".join(lines)
-
-        text = docs[0]
-        if "Движения по регистрам:" not in text:
-            return f"У {object_type}.{object_name} нет движений по регистрам в индексе."
-        section = text.split("Движения по регистрам:", 1)[1].strip()
-        return f"## Движения по регистрам: {object_type}.{object_name}\n\n{section[:2000]}"
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -307,3 +314,4 @@ def main_deprecated() -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+

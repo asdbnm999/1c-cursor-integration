@@ -20,6 +20,7 @@ from packages.kb.indexer.index_state import save_manifest_from_scan, update_mani
 from packages.kb.indexer.models import Chunk, FileKind, SourceFormat
 from packages.kb.indexer.profiles import list_profiles
 from packages.kb.indexer.keyword_index import build_keyword_index, merge_keyword_index
+from packages.kb.indexer.kb_index import build_kb_index
 from packages.kb.indexer.metadata_snapshot import build_metadata_snapshot
 from packages.kb.indexer.progress import IndexProgress, ProgressCallback
 from packages.kb.indexer.reference_index import build_reference_index
@@ -334,6 +335,7 @@ def run_index(
                 build_reference_index(config, None)
         if full:
             build_metadata_snapshot(config)
+            build_kb_index(config)
     except Exception as exc:
         logger.warning("Построение вспомогательных индексов: %s", exc)
 
