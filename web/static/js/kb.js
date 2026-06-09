@@ -1080,7 +1080,18 @@ function updateCursorStepState(cursor) {
   } else if (cursor.status === "ready") {
     setStepState("cursor", "active", "Включите в Cursor");
   } else if (cursor.status === "configured") {
-    setStepState("cursor", "active", "Запустите контейнер");
+    const needsContainer = Boolean(
+      cursor.in_mcp_json && (cursor.message || "").includes("не запущен"),
+    );
+    if (needsContainer) {
+      setStepState("cursor", "active", "Запустите контейнер");
+    } else if (cursor.mcp_reachable && !cursor.in_mcp_json) {
+      setStepState("cursor", "active", "Обновите mcp.json");
+    } else if (cursor.in_mcp_json) {
+      setStepState("cursor", "active", "В mcp.json");
+    } else {
+      setStepState("cursor", "active", "Обновите mcp.json");
+    }
   } else if (cursor.status === "misconfigured" || cursor.status === "error") {
     setStepState("cursor", "error", "Проверьте настройку");
   } else if (cursor.in_mcp_json) {
@@ -1738,6 +1749,7 @@ function initProfilePage(name) {
       }
       await refreshProfile(name, { force: true });
       await loadDockerPanel(name);
+      await pollCursorStatus(name, { full: true });
     } catch (e) {
       if (!el("docker-launch-progress")?.querySelector(".is-failed")) {
         setStepState("docker", "error", "Ошибка запуска");
