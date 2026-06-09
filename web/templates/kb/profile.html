@@ -62,15 +62,16 @@
     <h2>2. Docker MCP-сервер</h2>
     <span class="step-badge" id="badge-docker">Не выполнено</span>
   </div>
-  <p class="hint">Контейнер отдаёт поиск в Cursor. Отдельная группа в Docker Desktop на каждый профиль. Шаги по порядку: собрать образ → указать папку compose → запустить.</p>
+  <p class="hint">Контейнер отдаёт поиск в Cursor. Отдельная группа в Docker Desktop на каждый профиль. Укажите папку compose и нажмите «Запустить MCP» — сборка образа и запуск выполняются автоматически.</p>
   <p id="docker-gate-hint" class="hint gate-hint hidden"></p>
   <div id="docker-compose-dir" class="runtime-line"></div>
+  <div id="docker-launch-progress" class="docker-launch-progress hidden" aria-live="polite"></div>
   <div class="actions" id="docker-controls">
-    <button type="button" class="btn" id="btn-docker-build">Собрать образ</button>
+    <button type="button" class="btn primary" id="btn-docker-launch">Запустить MCP</button>
     <button type="button" class="btn" id="btn-docker-pick-dir">Выбрать директорию compose…</button>
     <button type="button" class="btn btn-ghost" id="btn-docker-use-default-compose">Стандартная папка</button>
-    <button type="button" class="btn primary" id="btn-docker-start">Запустить контейнер</button>
-    <button type="button" class="btn danger" id="btn-docker-stop">Остановить</button>
+    <button type="button" class="btn" id="btn-docker-stop" title="Остановить контейнер без удаления">Остановить</button>
+    <button type="button" class="btn danger" id="btn-docker-remove" title="Удалить контейнер и убрать запись из mcp.json Cursor">Удалить MCP</button>
     <label class="checkbox inline">
       <input type="checkbox" id="docker-rebuild">
       Пересобрать образ

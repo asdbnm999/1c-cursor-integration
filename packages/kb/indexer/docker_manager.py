@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from packages.kb.indexer.config import ProfileConfig, load_config
-from packages.kb.indexer.docker_compose import compose_down, compose_logs, compose_up
+from packages.kb.indexer.docker_compose import compose_down, compose_logs, compose_stop, compose_up
 from packages.kb.indexer.docker_names import CONTAINER_PORT, container_name, image_name
 from packages.kb.indexer.profile_ops import save_compose_dir
 from packages.kb.indexer.profiles import PROJECT_ROOT
@@ -66,6 +66,14 @@ def build_image(profile_name: str, force: bool = False) -> str:
     return tag_profile_image(profile_name)
 
 
+def container_exists(profile_name: str) -> bool:
+    try:
+        _get_client().containers.get(container_name(profile_name))
+        return True
+    except Exception:
+        return False
+
+
 def get_status(profile_name: str) -> ContainerStatus:
     config = load_config(profile_name)
     name = container_name(profile_name)
@@ -105,7 +113,19 @@ def start_container(
     if compose_dir:
         save_compose_dir(profile_name, compose_dir)
 
+    from packages.kb.indexer.docker_build import image_exists
     from packages.kb.indexer.kb_ports import ensure_profile_host_port
+
+    if rebuild:
+        logger.warning(
+            "Параметр rebuild устарел для docker/start — используйте сборку через docker/build "
+            "или кнопку «Запустить MCP» в интерфейсе.",
+        )
+    if not image_exists(profile_name):
+        raise ValueError(
+            "Docker-образ не найден. Дождитесь завершения сборки "
+            "или включите «Пересобрать образ» и нажмите «Запустить MCP».",
+        )
 
     current = get_status(profile_name)
     port_auto_assigned = False
@@ -118,8 +138,6 @@ def start_container(
     config = load_config(profile_name)
     compose_path = _resolve_compose_dir(config)
 
-    build_image(profile_name, force=rebuild)
-
     logger.info("Запуск compose-проекта в %s", compose_path)
     compose_up(compose_path, config, rebuild=False)
     status = get_status(profile_name)
@@ -129,11 +147,12 @@ def start_container(
 
 
 def stop_container(profile_name: str) -> ContainerStatus:
+    """Остановить контейнер без удаления и без изменения mcp.json."""
     config = load_config(profile_name)
     if config.docker.compose_dir:
         compose_path = Path(config.docker.compose_dir).expanduser().resolve()
         if (compose_path / "docker-compose.yml").exists():
-            compose_down(compose_path, profile_name)
+            compose_stop(compose_path, profile_name)
             return get_status(profile_name)
 
     client = _get_client()
@@ -147,6 +166,8 @@ def stop_container(profile_name: str) -> ContainerStatus:
 
 
 def remove_container(profile_name: str) -> None:
+    from packages.kb.indexer.cursor_mcp_config import remove_profile_from_cursor_mcp
+
     config = load_config(profile_name)
     if config.docker.compose_dir:
         compose_path = Path(config.docker.compose_dir).expanduser().resolve()
@@ -163,6 +184,11 @@ def remove_container(profile_name: str) -> None:
         container.remove(force=True)
     except Exception:
         pass
+
+    try:
+        remove_profile_from_cursor_mcp(config)
+    except Exception as exc:
+        logger.warning("Не удалось удалить MCP из mcp.json для %s: %s", profile_name, exc)
 
 
 def docker_available() -> tuple[bool, str]:

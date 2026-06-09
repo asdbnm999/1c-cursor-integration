@@ -156,6 +156,7 @@ def delete_profile_completely(profile_name: str) -> dict[str, bool]:
         "data_dir": False,
         "docker_stopped": False,
         "watch_stopped": False,
+        "mcp_removed": False,
     }
 
     try:
@@ -167,6 +168,15 @@ def delete_profile_completely(profile_name: str) -> dict[str, bool]:
         pass
 
     clear_profile_jobs(profile_name)
+
+    try:
+        from packages.kb.indexer.cursor_mcp_config import remove_profile_from_cursor_mcp
+
+        config = load_config(profile_name)
+        remove_result = remove_profile_from_cursor_mcp(config)
+        result["mcp_removed"] = bool(remove_result.get("removed"))
+    except Exception:
+        pass
 
     try:
         config = load_config(profile_name)

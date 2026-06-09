@@ -109,7 +109,6 @@ function updateWorkflowGates(p) {
     mcpFile.disabled = !mcpEnabled;
     mcpFile.closest("label")?.classList.toggle("btn--disabled", !mcpEnabled);
   }
-  loadCursorDirSettings().catch(() => {});
 }
 
 function setStepState(stepId, state, badgeText) {
@@ -461,6 +460,19 @@ function renderProfileDetail(p) {
 
 let jobPollTimer = null;
 let jobEventSource = null;
+let lastKnownJobId = null;
+let lastKnownJobStatus = null;
+let profileRefreshInFlight = false;
+let lastProfileHealthAt = 0;
+let lastDockerPanelAt = 0;
+let lastDockerRunning = null;
+let profileRuntimeTimer = null;
+let profileRuntimeVisibilityBound = false;
+const PROFILE_HEALTH_MS = 15000;
+const PROFILE_HEALTH_IDLE_MS = 300000;
+const DOCKER_PANEL_MS = 10000;
+const CURSOR_STATUS_POLL_MS = 30000;
+const PROFILE_RUNTIME_MS = 90000;
 let lastCompareData = null;
 
 const WIZARD_STATE = { preview: null, profileName: "" };
@@ -567,6 +579,13 @@ function startJobStream(jobId) {
 }
 
 function showJob(job, chunks = null) {
+  if (job?.id && job.id !== lastKnownJobId) {
+    lastKnownJobId = job.id;
+    lastKnownJobStatus = null;
+  }
+  const prevJobStatus = lastKnownJobStatus;
+  if (job?.status) lastKnownJobStatus = job.status;
+
   const box = el("job-status");
   const bar = el("job-progress");
   const fill = el("job-progress-fill");
@@ -643,15 +662,18 @@ function showJob(job, chunks = null) {
       setStepState("index", "success", chunks != null ? `Выполнено ✓ (${chunks} чанков)` : "Выполнено ✓");
     }
     stopJobStream();
-    loadProfileHealth(window.__profileName);
-    if (window.__profileName) {
-      refreshProfile(window.__profileName).catch(() => {});
+    const wasActive = prevJobStatus === "running" || prevJobStatus === "pending";
+    if (window.__profileName && wasActive) {
+      refreshProfile(window.__profileName, { force: true }).catch(() => {});
+    } else if (window.__profileName) {
+      loadProfileHealth(window.__profileName);
     }
   } else if (job.status === "failed" || job.status === "cancelled") {
     setStepState("index", "error", job.status === "cancelled" ? "Отменено" : "Ошибка");
     stopJobStream();
-    if (window.__profileName) {
-      refreshProfile(window.__profileName).catch(() => {});
+    const wasActive = prevJobStatus === "running" || prevJobStatus === "pending";
+    if (window.__profileName && wasActive) {
+      refreshProfile(window.__profileName, { force: true }).catch(() => {});
     }
   } else {
     stopJobStream();
@@ -666,40 +688,116 @@ async function pollJob(jobId) {
 }
 
 let dockerBuildPoll = null;
+let dockerLaunchInFlight = false;
 let dockerLogUserToggled = false;
 let savedComposeDir = "";
 let lastDockerPanelState = {};
+let lastCursorMcpPanel = {};
+
+const DOCKER_LAUNCH_STAGES = [
+  { id: "compose", name: "Папка compose" },
+  { id: "build", name: "Сборка образа" },
+  { id: "start", name: "Запуск контейнера" },
+];
+
+const DOCKER_LAUNCH_LABELS = {
+  waiting: "Ожидание",
+  active: "Выполняется…",
+  ok: "Готово",
+  skipped: "Пропущено",
+  failed: "Ошибка",
+};
+
+function initDockerLaunchProgress() {
+  const box = el("docker-launch-progress");
+  if (!box) return;
+  box.classList.remove("hidden");
+  box.innerHTML = DOCKER_LAUNCH_STAGES.map(
+    (stage) => `
+      <div class="docker-launch-item is-waiting" data-stage="${stage.id}">
+        <div class="docker-launch-head">
+          <span class="docker-launch-name">${stage.name}</span>
+          <span class="docker-launch-status">${DOCKER_LAUNCH_LABELS.waiting}</span>
+        </div>
+        <div class="progress-bar" aria-hidden="true">
+          <div class="progress-fill"></div>
+        </div>
+      </div>`,
+  ).join("");
+}
+
+function setDockerLaunchStage(stageId, state, detail = "") {
+  const item = el("docker-launch-progress")?.querySelector(
+    `.docker-launch-item[data-stage="${stageId}"]`,
+  );
+  if (!item) return;
+  item.className = "docker-launch-item is-" + state;
+  const statusEl = item.querySelector(".docker-launch-status");
+  const fill = item.querySelector(".progress-fill");
+  if (statusEl) {
+    statusEl.textContent = detail || DOCKER_LAUNCH_LABELS[state] || state;
+  }
+  if (fill) {
+    fill.classList.toggle("is-active", state === "active");
+    fill.style.width = state === "ok" || state === "skipped" ? "100%" : state === "active" ? "35%" : "0%";
+  }
+}
+
+function hideDockerLaunchProgress() {
+  el("docker-launch-progress")?.classList.add("hidden");
+}
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensureDockerImageBuilt(name, force) {
+  let buildState = await api("/kb/api/profiles/" + name + "/docker/build");
+  const canSkip = !force && buildState.image_exists && buildState.status !== "building";
+  if (!canSkip && buildState.status !== "building") {
+    buildState = await api("/kb/api/profiles/" + name + "/docker/build", {
+      method: "POST",
+      body: JSON.stringify({ force }),
+    });
+  }
+
+  while (buildState.status === "building") {
+    setDockerLaunchStage("build", "active", buildState.message || "Сборка образа…");
+    setStepState("docker", "active", buildState.message || "Сборка образа…");
+    lastDockerPanelState = { ...lastDockerPanelState, ...buildState, launch_in_flight: true };
+    renderDockerLogBox(lastDockerPanelState);
+    await sleepMs(2000);
+    buildState = await api("/kb/api/profiles/" + name + "/docker/build");
+  }
+  return buildState;
+}
 
 function updateDockerControls(p, buildState = {}) {
   const dockerEnabled = Boolean(p?.gates?.docker_enabled);
   const docker = p?.docker || {};
   const state = { ...lastDockerPanelState, ...buildState };
   const running = Boolean(docker.running || state.container_running);
-  const imageReady = Boolean(state.image_exists ?? docker.image_exists);
   const building = state.status === "building";
   const buildBlocked = building;
   const composeDir = docker.compose_dir || savedComposeDir;
+  const containerPresent = Boolean(docker.container_id || state.container_id);
+  const inMcpJson = Boolean(p?.cursor_mcp?.in_mcp_json || lastCursorMcpPanel.in_mcp_json);
 
+  const launchInFlight = Boolean(dockerLaunchInFlight || state.launch_in_flight);
   const reason = {
-    build: !dockerEnabled
+    launch: !dockerEnabled
       ? "Сначала выполните индексацию"
       : running
-        ? "Остановите контейнер перед сборкой"
-        : buildBlocked
-          ? "Дождитесь окончания сборки"
+        ? "Контейнер уже запущен"
+        : launchInFlight || buildBlocked
+          ? "Запуск выполняется…"
           : "",
-    start: !dockerEnabled
-      ? "Сначала выполните индексацию"
-      : buildBlocked
-        ? "Дождитесь окончания сборки"
-        : !imageReady
-          ? "Сначала нажмите «Собрать образ»"
-          : !composeDir
-            ? "Укажите папку compose — «Стандартная папка» или выбор вручную"
-            : running
-              ? "Контейнер уже запущен"
-              : "",
     stop: !dockerEnabled ? "Сначала выполните индексацию" : !running ? "Контейнер не запущен" : "",
+    remove: !dockerEnabled
+      ? "Сначала выполните индексацию"
+      : !running && !containerPresent && !inMcpJson
+        ? "Нет контейнера и записи в mcp.json"
+        : "",
     pick: !dockerEnabled ? "Сначала выполните индексацию" : running ? "Остановите контейнер" : "",
     default: !dockerEnabled ? "Сначала выполните индексацию" : running ? "Остановите контейнер" : "",
   };
@@ -707,18 +805,25 @@ function updateDockerControls(p, buildState = {}) {
   function setBtn(id, disabled, title) {
     const btn = el(id);
     if (!btn) return;
-    if (id === "btn-docker-build" && btn.textContent === "Сборка…") return;
+    if (id === "btn-docker-launch" && (launchInFlight || btn.textContent === "Запуск…")) {
+      btn.disabled = true;
+      return;
+    }
     btn.disabled = disabled;
     btn.title = title || "";
   }
 
-  setBtn("btn-docker-build", !dockerEnabled || buildBlocked || running, reason.build);
   setBtn(
-    "btn-docker-start",
-    !(dockerEnabled && imageReady && composeDir && !running && !buildBlocked),
-    reason.start
+    "btn-docker-launch",
+    !dockerEnabled || running || launchInFlight || buildBlocked,
+    reason.launch,
   );
   setBtn("btn-docker-stop", !dockerEnabled || !running, reason.stop);
+  setBtn(
+    "btn-docker-remove",
+    !dockerEnabled || (!running && !containerPresent && !inMcpJson),
+    reason.remove,
+  );
   setBtn("btn-docker-pick-dir", !dockerEnabled || running, reason.pick);
   setBtn("btn-docker-use-default-compose", !dockerEnabled || running, reason.default);
   const rebuild = el("docker-rebuild");
@@ -800,21 +905,21 @@ function renderDockerLogBox(state, { autoscroll = true } = {}) {
     } else if (state.status === "skipped") {
       lines.push("", "✓ Образ уже был собран — повторная сборка не выполнялась.");
     } else if (state.status === "interrupted") {
-      lines.push("", "⚠ Сборка прервана — нажмите «Собрать образ» (лучше с «Пересобрать»).");
+      lines.push("", "⚠ Сборка прервана — нажмите «Запустить MCP» (лучше с «Пересобрать образ»).");
     }
   } else if (state.image_exists) {
     const imageName = state.image || `1c-kb-${window.__profileName || "profile"}-mcp`;
     if (state.build_history) {
       lines.push(
         `Образ ${imageName} уже собран через kb-web.`,
-        "Лог прошлой сборки появится здесь после «Собрать образ» (или включите «Пересобрать»).",
+        "Лог прошлой сборки появится здесь после «Запустить MCP» (или включите «Пересобрать образ»).",
       );
     } else {
       lines.push(
         `Образ ${imageName} найден в Docker.`,
-        "Через этот интерфейс сборка ещё не запускалась — можно сразу нажать «Запустить контейнер».",
+        "Через этот интерфейс сборка ещё не запускалась — можно сразу нажать «Запустить MCP».",
         "Если образ собирали вручную или на другой машине — это нормально.",
-        "Чтобы собрать здесь и увидеть лог — нажмите «Собрать образ».",
+        "Чтобы собрать здесь и увидеть лог — нажмите «Запустить MCP» (или включите «Пересобрать образ»).",
       );
     }
   }
@@ -835,7 +940,7 @@ function renderDockerLogBox(state, { autoscroll = true } = {}) {
 
   if (!lines.length) {
     lines.push(
-      "Шаги по порядку: 1) «Собрать образ» → 2) «Стандартная папка» или выбор compose → 3) «Запустить контейнер».",
+      "Укажите папку compose («Стандартная папка» или выбор вручную), затем нажмите «Запустить MCP».",
     );
   }
 
@@ -853,6 +958,11 @@ function renderDockerLogBox(state, { autoscroll = true } = {}) {
     box.scrollTop = box.scrollHeight;
   }
 
+  if (dockerLaunchInFlight || state.launch_in_flight) {
+    updateDockerLogCollapse(state);
+    return;
+  }
+
   if (state.status === "building") {
     setStepState("docker", "active", "Сборка образа…");
   } else if (state.container_running) {
@@ -864,11 +974,11 @@ function renderDockerLogBox(state, { autoscroll = true } = {}) {
       state.status === "interrupted" ? "Сборка прервана — запустите снова" : "Ошибка сборки",
     );
   } else if (state.status === "completed" || state.status === "skipped") {
-    setStepState("docker", "active", "Образ готов — запустите контейнер");
+    setStepState("docker", "active", "Образ готов — нажмите «Запустить MCP»");
   } else if (state.image_exists) {
     const label = state.build_history
-      ? "Образ готов — запустите контейнер"
-      : "Образ найден — запустите контейнер";
+      ? "Образ готов — нажмите «Запустить MCP»"
+      : "Образ найден — нажмите «Запустить MCP»";
     setStepState("docker", "active", label);
   }
 
@@ -923,16 +1033,19 @@ async function pollDockerBuild() {
     lastDockerPanelState = { ...lastDockerPanelState, ...r };
     if (name) await loadDockerPanel(name);
     if (r.status === "building") {
+      if (!el("docker-launch-progress")?.classList.contains("hidden")) {
+        setDockerLaunchStage("build", "active", r.message || "Сборка образа…");
+      }
       const p = await api("/kb/api/profiles/" + name).catch(() => null);
       if (p) updateDockerControls(p, r);
       return;
     }
     clearInterval(dockerBuildPoll);
     dockerBuildPoll = null;
-    const buildBtn = el("btn-docker-build");
-    if (buildBtn) {
-      buildBtn.disabled = false;
-      buildBtn.textContent = "Собрать образ";
+    const launchBtn = el("btn-docker-launch");
+    if (launchBtn && !dockerLaunchInFlight) {
+      launchBtn.disabled = false;
+      launchBtn.textContent = "Запустить MCP";
     }
     if (name) {
       const p = await api("/kb/api/profiles/" + name).catch(() => null);
@@ -955,6 +1068,7 @@ function updateCursorStepState(cursor) {
     if (line) line.textContent = "";
     return;
   }
+  lastCursorMcpPanel = cursor;
 
   if (line) {
     line.className = "runtime-line" + (cursor.status === "connected" ? " ok" : "");
@@ -993,7 +1107,117 @@ async function pollCursorStatus(profileName, { full = false } = {}) {
   }
 }
 
-async function refreshProfile(name) {
+function applyDockerRuntimeState(docker, mcpUrl) {
+  const runtime = el("docker-runtime");
+  const url = mcpUrl || docker?.url || "";
+  if (runtime) {
+    if (docker?.running) {
+      runtime.className = "runtime-line ok";
+      runtime.textContent = `Контейнер запущен · ${url}`;
+    } else {
+      runtime.className = "runtime-line";
+      runtime.textContent = docker?.container_id
+        ? "Контейнер остановлен"
+        : "Контейнер не запущен";
+    }
+  }
+  if (docker?.running) {
+    setStepState("docker", "success", "Контейнер работает ✓");
+  } else if (docker?.container_id) {
+    setStepState("docker", "active", "Контейнер остановлен");
+  }
+}
+
+function stopProfileRuntimeWatchInterval() {
+  clearInterval(profileRuntimeTimer);
+  profileRuntimeTimer = null;
+}
+
+function stopProfileRuntimeWatch() {
+  stopProfileRuntimeWatchInterval();
+  if (profileRuntimeVisibilityBound) {
+    document.removeEventListener("visibilitychange", onProfileRuntimeVisibility);
+    profileRuntimeVisibilityBound = false;
+  }
+}
+
+function onProfileRuntimeVisibility() {
+  const name = window.__profileName;
+  if (!name) return;
+  if (document.hidden) {
+    stopProfileRuntimeWatchInterval();
+    return;
+  }
+  startProfileRuntimeWatch(name, { immediate: true });
+}
+
+function startProfileRuntimeWatch(name, { immediate = false } = {}) {
+  if (!name) return;
+  if (!profileRuntimeVisibilityBound) {
+    document.addEventListener("visibilitychange", onProfileRuntimeVisibility);
+    profileRuntimeVisibilityBound = true;
+  }
+  if (document.hidden) return;
+  stopProfileRuntimeWatchInterval();
+  if (immediate) pollProfileRuntime(name);
+  profileRuntimeTimer = setInterval(() => pollProfileRuntime(name), PROFILE_RUNTIME_MS);
+}
+
+async function pollProfileRuntime(name) {
+  if (!name || document.hidden) return;
+  if (profileRefreshInFlight || dockerBuildPoll || jobPollTimer || jobEventSource) return;
+
+  try {
+    const docker = await api("/kb/api/profiles/" + name + "/docker");
+    const isRunning = Boolean(docker.running);
+    const stateChanged = lastDockerRunning !== null && lastDockerRunning !== isRunning;
+
+    applyDockerRuntimeState(docker);
+    lastDockerPanelState = {
+      ...lastDockerPanelState,
+      container_running: isRunning,
+      url: docker.url,
+    };
+    renderDockerLogBox(lastDockerPanelState);
+    updateDockerControls(
+      {
+        gates: window.__profileGates,
+        docker: {
+          running: isRunning,
+          container_id: docker.container_id,
+          compose_dir: docker.compose_dir,
+        },
+      },
+      lastDockerPanelState,
+    );
+    lastDockerRunning = isRunning;
+
+    const now = Date.now();
+    if (stateChanged || now - lastProfileHealthAt >= PROFILE_HEALTH_IDLE_MS) {
+      lastProfileHealthAt = now;
+      loadProfileHealth(name);
+    }
+
+    const mcpEnabled = Boolean(window.__profileGates?.mcp_enabled);
+    if (mcpEnabled && (stateChanged || (isRunning && !cursorStatusPoll))) {
+      await pollCursorStatus(name);
+    }
+  } catch (_) {
+    /* фоновый опрос — тихо игнорируем сбой сети */
+  }
+}
+
+async function refreshProfile(name, { force = false } = {}) {
+  if (profileRefreshInFlight) return;
+  profileRefreshInFlight = true;
+  try {
+    await refreshProfileInner(name, force);
+  } finally {
+    profileRefreshInFlight = false;
+  }
+}
+
+async function refreshProfileInner(name, force = false) {
   const p = await api("/kb/api/profiles/" + name);
   el("profile-detail").innerHTML = renderProfileDetail(p);
   const rulesLink = el("link-rules");
@@ -1012,20 +1236,9 @@ async function refreshProfile(name) {
   }
 
   const runtime = el("docker-runtime");
-  if (runtime) {
-    if (p.docker?.running) {
-      runtime.className = "runtime-line ok";
-      runtime.textContent = `Контейнер запущен · ${p.mcp_url || ""}`;
-    } else {
-      runtime.className = "runtime-line";
-      runtime.textContent = p.docker?.container_id
-        ? "Контейнер остановлен"
-        : "Контейнер не запущен";
-    }
-  }
-
-  if (p.docker?.running) {
-    setStepState("docker", "success", "Контейнер работает ✓");
+  applyDockerRuntimeState(p.docker, p.mcp_url);
+  if (runtime && !p.docker?.running && !p.docker?.container_id) {
+    runtime.textContent = "Контейнер не запущен";
   }
 
   updateComposeDirDisplay(p.docker);
@@ -1047,17 +1260,24 @@ async function refreshProfile(name) {
   }
   updateCheckpointUI(p.checkpoint, p.index_job);
 
-  loadProfileHealth(name);
+  const now = Date.now();
+  if (force || now - lastProfileHealthAt >= PROFILE_HEALTH_MS) {
+    lastProfileHealthAt = now;
+    loadProfileHealth(name);
+  }
 
   updateWorkflowGates(p);
 
-  const dockerPanel = await loadDockerPanel(name);
-  lastDockerPanelState = dockerPanel || {};
-  updateDockerControls(p, dockerPanel);
-  updateCursorStepState(p.cursor_mcp);
-  if (p.cursor_mcp?.status !== "connected") {
-    pollCursorStatus(name);
+  if (force || now - lastDockerPanelAt >= DOCKER_PANEL_MS) {
+    lastDockerPanelAt = now;
+    const dockerPanel = await loadDockerPanel(name);
+    lastDockerPanelState = dockerPanel || {};
+    updateDockerControls(p, dockerPanel);
+  } else {
+    updateDockerControls(p, lastDockerPanelState);
   }
+  updateCursorStepState(p.cursor_mcp);
+  lastDockerRunning = Boolean(p.docker?.running);
 }
 
 let cursorStatusPoll = null;
@@ -1339,7 +1559,7 @@ function initProfilePage(name) {
     const on = ev.target.checked;
     try {
       await api("/kb/api/profiles/" + name + "/watch/" + (on ? "start" : "stop"), { method: "POST" });
-      await refreshProfile(name);
+      await refreshProfile(name, { force: true });
     } catch (e) {
       ev.target.checked = !on;
       alert(e.message);
@@ -1348,7 +1568,7 @@ function initProfilePage(name) {
 
   syncEmbeddingModelOptions();
   refreshKbDockerBadge();
-  refreshProfile(name).catch((e) => {
+  refreshProfile(name, { force: true }).catch((e) => {
     el("profile-detail").textContent = "Ошибка: " + e.message;
   });
 
@@ -1431,79 +1651,50 @@ function initProfilePage(name) {
 
   loadIndexChangesPreview(name);
 
-  el("btn-docker-build")?.addEventListener("click", async () => {
-    const btn = el("btn-docker-build");
-    if (btn?.disabled) {
-      alert(btn.title || "Сначала выполните шаги по порядку");
-      return;
-    }
-    if (!window.__profileGates?.docker_enabled) {
-      alert("Сначала выполните полную индексацию");
-      return;
-    }
-    const force = el("docker-rebuild")?.checked || false;
-    const pre = el("docker-status");
-    btn.disabled = true;
-    btn.textContent = "Сборка…";
-    if (pre) {
-      pre.textContent = force
-        ? "Запуск пересборки образа… (10–20 мин, смотрите лог ниже)"
-        : "Проверка образа / сборка…";
-    }
-    try {
-      const r = await api("/kb/api/profiles/" + name + "/docker/build", {
-        method: "POST",
-        body: JSON.stringify({ force }),
-      });
-      renderDockerBuild(r);
-      lastDockerPanelState = { ...lastDockerPanelState, ...r };
-      if (r.status === "building") {
-        updateDockerControls(
-          await api("/kb/api/profiles/" + name).catch(() => ({ gates: window.__profileGates })),
-          r,
-        );
-        if (!dockerBuildPoll) dockerBuildPoll = setInterval(pollDockerBuild, 2000);
-      } else {
-        btn.disabled = false;
-        btn.textContent = "Собрать образ";
-        const p = await api("/kb/api/profiles/" + name).catch(() => null);
-        if (p) updateDockerControls(p, r);
-      }
-    } catch (e) {
-      if (pre) pre.textContent = "Ошибка: " + e.message;
-      btn.disabled = false;
-      btn.textContent = "Собрать образ";
-    }
-  });
-
   loadDockerPanel(name).then((r) => {
-    const buildBtn = el("btn-docker-build");
-    if (r.status === "building" && !dockerBuildPoll) {
-      if (buildBtn) buildBtn.textContent = "Сборка…";
+    if (r.status === "building" && !dockerBuildPoll && !dockerLaunchInFlight) {
+      initDockerLaunchProgress();
+      setDockerLaunchStage("compose", "ok", r.compose_dir || savedComposeDir || "—");
+      setDockerLaunchStage("build", "active", r.message || "Сборка образа…");
+      setDockerLaunchStage("start", "waiting");
+      const launchBtn = el("btn-docker-launch");
+      if (launchBtn) {
+        launchBtn.disabled = true;
+        launchBtn.textContent = "Запуск…";
+      }
       dockerBuildPoll = setInterval(pollDockerBuild, 2000);
-    } else if (buildBtn && buildBtn.textContent === "Сборка…") {
-      buildBtn.disabled = false;
-      buildBtn.textContent = "Собрать образ";
     }
   });
 
   pollCursorStatus(name);
   if (!cursorStatusPoll) {
-    cursorStatusPoll = setInterval(() => pollCursorStatus(name), 30000);
+    cursorStatusPoll = setInterval(() => pollCursorStatus(name), CURSOR_STATUS_POLL_MS);
   }
+  startProfileRuntimeWatch(name);
 
-  el("btn-docker-start")?.addEventListener("click", async () => {
-    const startBtn = el("btn-docker-start");
-    if (startBtn?.disabled) {
-      alert(startBtn.title || "Сначала соберите образ и укажите папку compose");
+  el("btn-docker-launch")?.addEventListener("click", async () => {
+    const launchBtn = el("btn-docker-launch");
+    if (launchBtn?.disabled) {
+      alert(launchBtn.title || "Сначала выполните шаги по порядку");
       return;
     }
     if (!window.__profileGates?.docker_enabled) {
       alert("Сначала выполните полную индексацию");
       return;
     }
+
+    dockerLaunchInFlight = true;
+    initDockerLaunchProgress();
+    if (launchBtn) {
+      launchBtn.disabled = true;
+      launchBtn.textContent = "Запуск…";
+    }
+
     try {
-      const p = await api("/kb/api/profiles/" + name);
+      setDockerLaunchStage("compose", "active", "Проверка…");
+      setStepState("docker", "active", "Подготовка…");
+
+      let p = await api("/kb/api/profiles/" + name);
       let composeDir = p.docker?.compose_dir || savedComposeDir;
       if (!composeDir) {
         const saved = await api("/kb/api/profiles/" + name + "/docker/compose-dir", {
@@ -1513,20 +1704,53 @@ function initProfilePage(name) {
         composeDir = saved.compose_dir;
         updateComposeDirDisplay({ compose_dir: composeDir });
       }
-      setStepState("docker", "active", "Запуск…");
-      const rebuild = el("docker-rebuild")?.checked || false;
+      setDockerLaunchStage("compose", "ok", composeDir);
+
+      const force = el("docker-rebuild")?.checked || false;
+      const imageReady = Boolean(p.docker?.image_exists);
+      if (force || !imageReady) {
+        const buildResult = await ensureDockerImageBuilt(name, force);
+        if (buildResult.status === "failed" || buildResult.status === "interrupted") {
+          setDockerLaunchStage("build", "failed", buildResult.error || buildResult.message);
+          setStepState("docker", "error", "Ошибка сборки");
+          throw new Error(buildResult.error || buildResult.message || "Сборка не удалась");
+        }
+        setDockerLaunchStage(
+          "build",
+          buildResult.status === "skipped" ? "skipped" : "ok",
+          buildResult.message || "Образ готов",
+        );
+      } else {
+        setDockerLaunchStage("build", "skipped", "Образ уже собран");
+      }
+
+      setDockerLaunchStage("start", "active", "docker compose up…");
+      setStepState("docker", "active", "Запуск контейнера…");
       const startResult = await api("/kb/api/profiles/" + name + "/docker/start", {
         method: "POST",
-        body: JSON.stringify({ compose_dir: composeDir, rebuild }),
+        body: JSON.stringify({ compose_dir: composeDir, rebuild: false }),
       });
+      setDockerLaunchStage("start", "ok", startResult.url || "Контейнер запущен");
       if (startResult.port_auto_assigned && startResult.message) {
-        setStepState("docker", "active", startResult.message);
+        setStepState("docker", "success", startResult.message);
+      } else {
+        setStepState("docker", "success", "Контейнер работает ✓");
       }
-      await refreshProfile(name);
+      await refreshProfile(name, { force: true });
       await loadDockerPanel(name);
     } catch (e) {
-      setStepState("docker", "error", "Ошибка запуска");
+      if (!el("docker-launch-progress")?.querySelector(".is-failed")) {
+        setStepState("docker", "error", "Ошибка запуска");
+      }
       alert(e.message);
+    } finally {
+      dockerLaunchInFlight = false;
+      if (launchBtn) {
+        launchBtn.disabled = false;
+        launchBtn.textContent = "Запустить MCP";
+      }
+      const p = await api("/kb/api/profiles/" + name).catch(() => null);
+      if (p) updateDockerControls(p, lastDockerPanelState);
     }
   });
 
@@ -1583,11 +1807,45 @@ function initProfilePage(name) {
       alert("Сначала выполните полную индексацию");
       return;
     }
+    if (
+      !confirm(
+        "Остановить контейнер MCP?\nКонтейнер останется в Docker, запись в mcp.json не изменится.",
+      )
+    ) {
+      return;
+    }
     try {
       await api("/kb/api/profiles/" + name + "/docker/stop", { method: "POST" });
       dockerLogUserToggled = false;
-      await refreshProfile(name);
+      await refreshProfile(name, { force: true });
       setStepState("docker", "active", "Контейнер остановлен");
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  el("btn-docker-remove")?.addEventListener("click", async () => {
+    const btn = el("btn-docker-remove");
+    if (btn?.disabled) {
+      alert(btn.title || "Нечего удалять");
+      return;
+    }
+    if (!window.__profileGates?.docker_enabled) {
+      alert("Сначала выполните полную индексацию");
+      return;
+    }
+    if (
+      !confirm(
+        "Удалить MCP-профиль из Docker?\nКонтейнер будет удалён, запись исчезнет из mcp.json Cursor.",
+      )
+    ) {
+      return;
+    }
+    try {
+      await api("/kb/api/profiles/" + name + "/docker/remove", { method: "POST" });
+      dockerLogUserToggled = false;
+      await refreshProfile(name, { force: true });
+      setStepState("docker", "active", "Контейнер удалён");
     } catch (e) {
       alert(e.message);
     }
@@ -1760,7 +2018,7 @@ function initProfilePage(name) {
       }
       alert(msg);
       dialogSettings?.close();
-      await refreshProfile(name);
+      await refreshProfile(name, { force: true });
     } catch (e) {
       alert(e.message);
     }

@@ -18,6 +18,7 @@ from web.mcp.service import (
     get_logs,
     get_server_cfg,
     get_standard_mcp_status,
+    remove_server,
     stop_server,
     update_settings_payload,
 )
@@ -137,6 +138,15 @@ def api_stop():
     if server not in (SEARXNG_SLUG, SYNTAX_SLUG):
         return jsonify({"error": "server: searxng | 1c-syntax-helper"}), 400
     return jsonify(stop_server(server))
+
+
+@mcp_api_bp.route("/remove", methods=["POST"])
+def api_remove():
+    payload = request.get_json(silent=True) or {}
+    server = payload.get("server")
+    if server not in (SEARXNG_SLUG, SYNTAX_SLUG):
+        return jsonify({"error": "server: searxng | 1c-syntax-helper"}), 400
+    return jsonify(remove_server(server))
 
 
 @mcp_api_bp.route("/logs")

@@ -9,6 +9,7 @@ from packages.kb.indexer.cursor_mcp_config import (
     cursor_settings_summary,
     list_mcp_backups,
     prune_old_mcp_backups,
+    remove_servers_from_cursor_mcp,
     resolve_cursor_config_dir,
     restore_mcp_from_backup,
     save_cursor_dir,
@@ -118,6 +119,41 @@ def test_prune_old_mcp_backups(monkeypatch, tmp_path: Path):
     assert old.exists() is False
     assert recent.exists() is True
     assert len(list_mcp_backups()) == 1
+
+
+def test_remove_servers_keeps_other_entries(monkeypatch, tmp_path: Path):
+    import packages.kb.indexer.cursor_mcp_config as cfg_mod
+
+    cursor_dir = tmp_path / "cursor-config"
+    cursor_dir.mkdir()
+    mcp_path = cursor_dir / "mcp.json"
+    mcp_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "other-mcp": {"url": "http://127.0.0.1:9/mcp"},
+                    "1c-kb-demo": {"url": "http://127.0.0.1:8011/mcp"},
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    backups_dir = tmp_path / "proj" / "data" / "cursor-mcp-backups"
+    fake_home = tmp_path / "no-cursor-home"
+    fake_home.mkdir()
+    monkeypatch.setattr(cfg_mod, "MCP_BACKUPS_DIR", backups_dir)
+    monkeypatch.setattr(cfg_mod, "cursor_home_dir", lambda: fake_home / ".cursor")
+    monkeypatch.setattr(cfg_mod, "get_saved_cursor_dir", lambda: str(cursor_dir))
+
+    result = remove_servers_from_cursor_mcp(["1c-kb-demo"])
+    data = json.loads(mcp_path.read_text(encoding="utf-8"))
+    assert result["removed"] == ["1c-kb-demo"]
+    assert "other-mcp" in data["mcpServers"]
+    assert "1c-kb-demo" not in data["mcpServers"]
+    assert result["backup_path"]
+    assert Path(result["backup_path"]).exists()
 
 
 def test_restore_mcp_from_latest_backup(monkeypatch, tmp_path: Path):

@@ -453,15 +453,22 @@
         : "";
     const deployDisabled = srv.slug === "1c-syntax-helper" && srv.needs_hbk;
     const deployTitle = deployDisabled ? ' title="Сначала укажите shcntx_ru.hbk"' : "";
-    const containerRunning = !!(srv.container || {}).running;
+    const container = srv.container || {};
+    const containerRunning = !!container.running;
     const deployBtn = containerRunning
       ? ""
       : `<button type="button" class="btn btn-primary btn-deploy" data-server="${srv.slug}"${deployDisabled ? " disabled" : ""}${deployTitle}>Deploy (up -d)</button>`;
+    const containerExists = container.health !== "missing";
+    const stopDisabled = !container.running;
+    const stopTitle = stopDisabled ? ' title="Контейнер не запущен"' : ' title="Остановить контейнеры без удаления"';
+    const removeDisabled = !containerExists && !srv.in_mcp_json;
+    const removeTitle = removeDisabled
+      ? ' title="Нет контейнера и записи в mcp.json"'
+      : ' title="Удалить контейнеры и убрать сервер из mcp.json Cursor"';
     const corePort =
       srv.slug === "searxng"
         ? `<label>Порт Core <input type="number" class="text-input port-core" data-server="${srv.slug}" value="${srv.host_port_core || 8202}" min="1024" max="65535"></label>`
         : "";
-    const container = srv.container || {};
     const containerUp =
       container.running && (container.health === "healthy" || container.health === "none");
     const mcpSynced = srv.in_mcp_json && srv.mcp_json_url === srv.mcp_url;
@@ -516,7 +523,8 @@
         </div>
         <div class="field-row actions-row">
           ${deployBtn}
-          <button type="button" class="btn btn-stop" data-server="${srv.slug}">Остановить</button>
+          <button type="button" class="btn btn-stop" data-server="${srv.slug}"${stopDisabled ? " disabled" : ""}${stopTitle}>Остановить</button>
+          <button type="button" class="btn danger btn-remove" data-server="${srv.slug}"${removeDisabled ? " disabled" : ""}${removeTitle}>Удалить MCP</button>
           <button type="button" class="btn btn-ghost btn-logs" data-server="${srv.slug}">Логи</button>
         </div>
       </section>`;
@@ -741,8 +749,29 @@
     });
     document.querySelectorAll(".btn-stop").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        if (!confirm("Остановить стек " + btn.dataset.server + "?")) return;
+        if (btn.disabled) return;
+        if (!confirm("Остановить контейнеры " + btn.dataset.server + "?\nКонтейнеры останутся в Docker, запись в mcp.json не изменится.")) return;
         await api("/mcp/api/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ server: btn.dataset.server }),
+        });
+        refresh();
+      });
+    });
+    document.querySelectorAll(".btn-remove").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (btn.disabled) return;
+        if (
+          !confirm(
+            "Удалить MCP " +
+              btn.dataset.server +
+              "?\nКонтейнеры будут удалены из Docker, запись исчезнет из mcp.json Cursor."
+          )
+        ) {
+          return;
+        }
+        await api("/mcp/api/remove", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ server: btn.dataset.server }),

@@ -9,8 +9,17 @@
     ready: "Готово",
   };
 
+  const progressLabels = {
+    waiting: "Ожидание",
+    installing: "Установка…",
+    ok: "Готово",
+    skipped: "Пропущено",
+    failed: "Ошибка",
+    conflict: "Конфликт версий",
+  };
+
   let lastStatus = null;
-  let pendingConflicts = [];
+  let installInFlight = false;
 
   function $(id) {
     return document.getElementById(id);
@@ -67,7 +76,7 @@
     const stateClass =
       item.install_state === "update_available" ? "cell-warn" : "";
     return `
-      <tr data-path="${escapeAttr(item.path)}">
+      <tr data-path="${escapeAttr(item.path)}" data-extension-id="${escapeAttr(item.extension_id)}" data-filename="${escapeAttr(item.filename)}">
         <td><input type="checkbox" class="vsix-select" data-path="${escapeAttr(item.path)}" ${checked}></td>
         <td class="mono">${escapeHtml(item.filename)}</td>
         <td>${escapeHtml(item.extension_id)}</td>
@@ -135,6 +144,80 @@
     );
   }
 
+  function rowMeta(path) {
+    const row = document.querySelector(`tr[data-path="${CSS.escape(path)}"]`);
+    return {
+      filename: row?.dataset.filename || path.split("/").pop() || path,
+      extensionId: row?.dataset.extensionId || "",
+    };
+  }
+
+  function renderInstallProgress(paths) {
+    const box = $("install-progress");
+    if (!box) return;
+    box.innerHTML = paths
+      .map((path) => {
+        const meta = rowMeta(path);
+        const title = meta.extensionId || meta.filename;
+        return `
+          <div class="install-progress-item is-waiting" data-path="${escapeAttr(path)}">
+            <div class="install-progress-head">
+              <span class="install-progress-name">${escapeHtml(title)}</span>
+              <span class="install-progress-status">${progressLabels.waiting}</span>
+            </div>
+            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-fill"></div>
+            </div>
+          </div>`;
+      })
+      .join("");
+    box.classList.remove("hidden");
+  }
+
+  function setInstallProgress(path, state, message) {
+    const item = $("install-progress")?.querySelector(
+      `.install-progress-item[data-path="${CSS.escape(path)}"]`
+    );
+    if (!item) return;
+
+    item.className = "install-progress-item is-" + state;
+    const statusEl = item.querySelector(".install-progress-status");
+    const fill = item.querySelector(".progress-fill");
+    const bar = item.querySelector(".progress-bar");
+
+    const label =
+      message ||
+      progressLabels[state] ||
+      state;
+    if (statusEl) statusEl.textContent = label;
+
+    fill?.classList.remove("is-active");
+    let pct = 0;
+    if (state === "installing") {
+      pct = 15;
+      fill?.classList.add("is-active");
+    } else if (state === "ok" || state === "skipped") {
+      pct = 100;
+    } else if (state === "failed" || state === "conflict") {
+      pct = 100;
+      if (fill) fill.style.background = "var(--err)";
+    }
+
+    if (fill) fill.style.width = pct + "%";
+    if (bar) bar.setAttribute("aria-valuenow", String(pct));
+  }
+
+  function setInstallUiBusy(busy) {
+    installInFlight = busy;
+    const installBtn = $("btn-install");
+    const refreshBtn = $("btn-refresh");
+    if (installBtn) {
+      installBtn.disabled = busy;
+      installBtn.textContent = busy ? "Установка…" : "Установить выбранные";
+    }
+    if (refreshBtn) refreshBtn.disabled = busy;
+  }
+
   function renderReport(results) {
     const box = $("install-report");
     if (!box) return;
@@ -155,47 +238,79 @@
     box.classList.remove("hidden");
   }
 
-  async function installWithConflicts(paths, force) {
-    const skipPaths = [];
-    pendingConflicts = [];
-
-    let response = await fetch("/plugins/api/install", {
+  async function postInstall(paths, { force = false, skipPaths = [] } = {}) {
+    const response = await fetch("/plugins/api/install", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ paths, force, skip_paths: skipPaths }),
     });
-    let data = await response.json();
+    const data = await response.json();
     if (!response.ok) {
-      alert(data.error || "Ошибка установки");
-      return;
+      throw new Error(data.error || "Ошибка установки");
     }
-
-    const conflicts = (data.results || []).filter((r) => r.status === "conflict");
-    for (const conflict of conflicts) {
-      const action = await showConflictDialog(conflict);
-      if (action === "reinstall") {
-        const forced = await fetch("/plugins/api/install", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            paths: [conflict.path],
-            force: true,
-            skip_paths: [],
-          }),
-        });
-        const forcedData = await forced.json();
-        data.results = (data.results || []).filter(
-          (r) => r.path !== conflict.path
-        );
-        data.results.push(...(forcedData.results || []));
-      } else {
-        skipPaths.push(conflict.path);
-      }
-    }
-
-    renderReport(data.results);
-    await refresh();
     return data;
+  }
+
+  async function installOne(path, { force = false } = {}) {
+    setInstallProgress(path, "installing");
+    const data = await postInstall([path], { force, skipPaths: [] });
+    const result = (data.results || [])[0];
+    if (!result) {
+      setInstallProgress(path, "failed", "Нет ответа сервера");
+      return { status: "failed", message: "Нет ответа сервера", path };
+    }
+
+    if (result.status === "conflict") {
+      setInstallProgress(path, "conflict", result.message);
+      const action = await showConflictDialog(result);
+      if (action === "reinstall") {
+        setInstallProgress(path, "installing", "Переустановка…");
+        const forced = await postInstall([path], { force: true, skipPaths: [] });
+        const forcedResult = (forced.results || [])[0] || result;
+        setInstallProgress(
+          path,
+          forcedResult.status === "ok" ? "ok" : forcedResult.status,
+          forcedResult.message
+        );
+        return forcedResult;
+      }
+      setInstallProgress(path, "skipped", "Пропущено пользователем");
+      return {
+        path,
+        status: "skipped",
+        message: "Пропущено пользователем",
+      };
+    }
+
+    const uiState =
+      result.status === "ok"
+        ? "ok"
+        : result.status === "skipped"
+          ? "skipped"
+          : "failed";
+    setInstallProgress(path, uiState, result.message);
+    return result;
+  }
+
+  async function installWithConflicts(paths) {
+    renderInstallProgress(paths);
+    $("install-report")?.classList.add("hidden");
+    setInstallUiBusy(true);
+
+    const allResults = [];
+    try {
+      for (const path of paths) {
+        const result = await installOne(path, { force: false });
+        allResults.push(result);
+      }
+      renderReport(allResults);
+      await refresh();
+    } catch (err) {
+      alert(err.message || "Ошибка установки");
+    } finally {
+      setInstallUiBusy(false);
+    }
+    return allResults;
   }
 
   function showConflictDialog(conflict) {
@@ -268,14 +383,16 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    $("btn-refresh")?.addEventListener("click", refresh);
+    $("btn-refresh")?.addEventListener("click", () => {
+      if (!installInFlight) refresh();
+    });
     $("btn-install")?.addEventListener("click", async () => {
       const paths = selectedPaths();
       if (!paths.length) {
         alert("Выберите хотя бы один VSIX");
         return;
       }
-      await installWithConflicts(paths, false);
+      await installWithConflicts(paths);
     });
     $("btn-save-cursor-dir")?.addEventListener("click", saveCursorDir);
     $("btn-pick-cursor-dir")?.addEventListener("click", pickCursorDir);

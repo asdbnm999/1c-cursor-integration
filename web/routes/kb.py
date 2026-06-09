@@ -21,6 +21,7 @@ from packages.kb.indexer.cursor_mcp_config import (
     save_cursor_dir,
 )
 from packages.kb.indexer.cursor_mcp_status import get_cursor_mcp_status
+from web.cursor_mcp import sync_managed_mcp_entries
 from packages.kb.indexer.docker_build import get_build_state, image_exists, start_build
 from packages.kb.indexer.docker_compose import default_compose_dir
 from packages.kb.indexer.docker_manager import (
@@ -29,6 +30,7 @@ from packages.kb.indexer.docker_manager import (
     get_status as docker_status,
     mcp_entry_for_profile,
     start_container,
+    remove_container,
     stop_container,
 )
 from packages.kb.indexer.embeddings import check_embeddings
@@ -740,6 +742,17 @@ def api_docker_stop(name: str):
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@kb_api_bp.post("/profiles/<name>/docker/remove")
+def api_docker_remove(name: str):
+    try:
+        require_indexed_profile(name)
+        remove_container(name)
+        status = docker_status(name)
+        return jsonify({"ok": True, "running": status.running, "container_id": status.container_id})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @kb_api_bp.get("/profiles/<name>/docker/logs")
 def api_docker_logs(name: str):
     status = docker_status(name)
@@ -759,6 +772,7 @@ def api_docker_logs(name: str):
 
 @kb_api_bp.get("/profiles/<name>/docker")
 def api_docker_status(name: str):
+    sync_managed_mcp_entries()
     status = docker_status(name)
     config = load_config(name)
     return jsonify({

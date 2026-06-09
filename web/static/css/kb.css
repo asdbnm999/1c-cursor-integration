@@ -198,6 +198,74 @@ h2 {
   margin-bottom: 1rem;
 }
 
+.docker-launch-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(6, 10, 18, 0.55);
+}
+
+.docker-launch-progress.hidden {
+  display: none;
+}
+
+.docker-launch-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.docker-launch-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.92rem;
+}
+
+.docker-launch-name {
+  font-weight: 600;
+}
+
+.docker-launch-status {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.docker-launch-item.is-active .docker-launch-status {
+  color: var(--accent);
+}
+
+.docker-launch-item.is-ok .docker-launch-status {
+  color: #5eead4;
+}
+
+.docker-launch-item.is-skipped .docker-launch-status {
+  color: var(--muted);
+}
+
+.docker-launch-item.is-failed .docker-launch-status {
+  color: var(--danger);
+}
+
+.docker-launch-item .progress-fill.is-active {
+  animation: docker-launch-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes docker-launch-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
 .log,
 .code {
   width: 100%;

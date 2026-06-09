@@ -146,6 +146,17 @@ def compose_up(compose_dir: Path, config: ProfileConfig, *, rebuild: bool = Fals
     return output
 
 
+def compose_stop(compose_dir: Path, profile_name: str) -> str:
+    compose_path = compose_file_path(compose_dir)
+    if not compose_path.exists():
+        return ""
+    result = _run_compose(compose_dir, profile_name, "stop", timeout=120)
+    output = ((result.stdout or "") + (result.stderr or "")).strip()
+    if result.returncode != 0:
+        raise RuntimeError(output or "docker compose stop завершился с ошибкой")
+    return output
+
+
 def compose_down(compose_dir: Path, profile_name: str) -> str:
     compose_path = compose_file_path(compose_dir)
     if not compose_path.exists():

@@ -178,6 +178,48 @@ def test_check_mcp_initialize_ok():
     assert result["health"] == "ok"
 
 
+def test_remove_mcp_servers(tmp_path: Path, monkeypatch):
+    from web.cursor_mcp import read_mcp_config, remove_mcp_servers
+
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text(
+        '{"mcpServers": {"searxng": {"url": "http://127.0.0.1:8201/mcp"}, "custom": {"url": "http://127.0.0.1:1/mcp"}}}',
+        encoding="utf-8",
+    )
+    backups = tmp_path / "backups"
+    monkeypatch.setattr("web.cursor_mcp.MCP_BACKUPS_DIR", backups)
+
+    result = remove_mcp_servers(["searxng"], config_path=cfg)
+    data = read_mcp_config(cfg)
+    assert result["removed"] == ["searxng"]
+    assert "searxng" not in data["mcpServers"]
+    assert "custom" in data["mcpServers"]
+    assert list(backups.glob("mcp-*.json"))
+
+
+def test_sync_managed_mcp_entries_removes_missing_standard(monkeypatch, tmp_path: Path):
+    from web.cursor_mcp import read_mcp_config, sync_managed_mcp_entries
+
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text(
+        '{"mcpServers": {"searxng": {"url": "http://127.0.0.1:8201/mcp"}, "1c-kb-gone": {"url": "http://127.0.0.1:8301/mcp"}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("web.cursor_mcp.resolve_mcp_config_path", lambda: cfg)
+    monkeypatch.setattr(
+        "web.mcp.deploy.container_status",
+        lambda name: {"health": "missing"},
+    )
+    monkeypatch.setattr("web.settings.load_settings", lambda: {"mcp": {"standard": {}}})
+    monkeypatch.setattr("packages.kb.indexer.profiles.list_profiles", lambda: [])
+
+    removed = sync_managed_mcp_entries(config_path=cfg)
+    data = read_mcp_config(cfg)
+    assert "searxng" in removed
+    assert "1c-kb-gone" in removed
+    assert data["mcpServers"] == {}
+
+
 def test_get_mcp_status_configured_without_health(tmp_path: Path):
     from web.cursor_mcp import get_mcp_status
 

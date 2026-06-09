@@ -83,6 +83,11 @@ def compose_up(compose_dir: Path) -> dict[str, Any]:
     return _compose_result(proc, action="up")
 
 
+def compose_stop(compose_dir: Path) -> dict[str, Any]:
+    proc = _run(["docker", "compose", "stop"], cwd=compose_dir)
+    return _compose_result(proc, action="stop")
+
+
 def compose_down(compose_dir: Path) -> dict[str, Any]:
     proc = _run(["docker", "compose", "down"], cwd=compose_dir)
     return _compose_result(proc, action="down")

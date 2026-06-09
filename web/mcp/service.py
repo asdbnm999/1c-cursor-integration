@@ -6,7 +6,14 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from web.cursor_mcp import apply_standard_mcp, check_mcp_initialize, check_server_health, get_mcp_status
+from web.cursor_mcp import (
+    apply_standard_mcp,
+    check_mcp_initialize,
+    check_server_health,
+    get_mcp_status,
+    remove_mcp_servers,
+    sync_managed_mcp_entries,
+)
 from web.docker_naming import mcp_stack_name
 from web.mcp.constants import (
     RESOURCE_LIMITS_UI,
@@ -201,6 +208,7 @@ def update_section_status() -> str:
 
 
 def get_standard_mcp_status(*, with_health: bool = True) -> dict[str, Any]:
+    sync_managed_mcp_entries()
     settings = load_settings()
     mcp_cfg = get_mcp_status(with_health=with_health)
     servers_out = []
@@ -442,13 +450,36 @@ def run_deploy(
 
 
 def stop_server(server: str) -> dict[str, Any]:
+    """Остановить контейнеры без удаления (docker compose stop)."""
+    from web.mcp.deploy import compose_stop
+
+    if server not in (SEARXNG_SLUG, SYNTAX_SLUG):
+        return {"ok": False, "message": "Неизвестный сервер"}
+
+    cfg = get_server_cfg(server)
+    compose_dir = Path(cfg.get("compose_dir", "")).expanduser()
+    if not compose_dir.is_dir():
+        return {"ok": False, "message": "Каталог compose не найден"}
+    result = compose_stop(compose_dir)
+    update_section_status()
+    return result
+
+
+def remove_server(server: str) -> dict[str, Any]:
+    """Удалить контейнеры (docker compose down) и убрать запись из mcp.json."""
     from web.mcp.deploy import compose_down
+
+    if server not in (SEARXNG_SLUG, SYNTAX_SLUG):
+        return {"ok": False, "message": "Неизвестный сервер"}
 
     cfg = get_server_cfg(server)
     compose_dir = Path(cfg.get("compose_dir", "")).expanduser()
     if not compose_dir.is_dir():
         return {"ok": False, "message": "Каталог compose не найден"}
     result = compose_down(compose_dir)
+    if result.get("ok"):
+        mcp_key = SERVER_UI[server]["mcp_key"]
+        result["mcp_remove"] = remove_mcp_servers([mcp_key])
     update_section_status()
     return result
 

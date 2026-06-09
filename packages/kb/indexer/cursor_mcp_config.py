@@ -230,3 +230,71 @@ def apply_profile_to_cursor_mcp(
         "url": entry["url"],
         "mcp_json": merged_text,
     }
+
+
+def remove_servers_from_cursor_mcp(
+    server_names: list[str],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Удалить указанные ключи из mcp.json Cursor (с бэкапом)."""
+    names = [name for name in server_names if name]
+    if not names:
+        return {"removed": [], "mcp_json_path": "", "backup_path": "", "backup_name": ""}
+
+    try:
+        cfg_dir = resolve_cursor_config_dir()
+    except ValueError as exc:
+        return {
+            "removed": [],
+            "mcp_json_path": "",
+            "backup_path": "",
+            "backup_name": "",
+            "error": str(exc),
+        }
+
+    mcp_path = cfg_dir / "mcp.json"
+    if not mcp_path.is_file():
+        return {
+            "removed": [],
+            "mcp_json_path": str(mcp_path),
+            "backup_path": "",
+            "backup_name": "",
+        }
+
+    mcp_data = parse_mcp_json(mcp_path.read_text(encoding="utf-8"))
+    servers = mcp_data.setdefault("mcpServers", {})
+    removed = [name for name in names if name in servers]
+    if not removed:
+        return {
+            "removed": [],
+            "mcp_json_path": str(mcp_path),
+            "backup_path": "",
+            "backup_name": "",
+        }
+
+    if dry_run:
+        return {
+            "removed": removed,
+            "mcp_json_path": str(mcp_path),
+            "backup_path": "",
+            "backup_name": "",
+            "dry_run": True,
+        }
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    backup_path = _backup_path_for_stamp(stamp)
+    shutil.copy2(mcp_path, backup_path)
+    for name in removed:
+        del servers[name]
+    mcp_path.write_text(format_mcp_json(mcp_data), encoding="utf-8")
+    return {
+        "removed": removed,
+        "mcp_json_path": str(mcp_path),
+        "backup_path": str(backup_path),
+        "backup_name": backup_path.name,
+    }
+
+
+def remove_profile_from_cursor_mcp(config: ProfileConfig) -> dict[str, Any]:
+    return remove_servers_from_cursor_mcp([config.mcp.server_name])
