@@ -24,7 +24,14 @@ from packages.kb.indexer.metadata_snapshot import build_metadata_snapshot
 from packages.kb.indexer.progress import IndexProgress, ProgressCallback
 from packages.kb.indexer.reference_index import build_reference_index
 from packages.kb.indexer.scanner import scan_profile
-from packages.kb.indexer.store import count_chunks, delete_by_path, get_collection, reset_store_cache, upsert_chunks
+from packages.kb.indexer.store import (
+    count_chunks,
+    delete_by_path,
+    path_has_chunks,
+    reset_collection_store,
+    reset_store_cache,
+    upsert_chunks,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -62,6 +69,55 @@ def _check_cancel(should_cancel: Callable[[], bool] | None) -> None:
         raise IndexJobCancelledError("Индексация отменена")
 
 
+def _checkpoint_confirmed_paths(config: ProfileConfig, paths: list[str]) -> list[str]:
+    """Файлы из checkpoint, чанки которых реально есть в Chroma."""
+    confirmed: list[str] = []
+    for raw in paths:
+        norm = str(Path(raw).expanduser().resolve())
+        if path_has_chunks(config, norm):
+            confirmed.append(norm)
+    return confirmed
+
+
+def _flush_pending_chunks(
+    config: ProfileConfig,
+    pending: list[Chunk],
+    *,
+    progress: IndexProgress,
+    on_progress: ProgressCallback | None,
+    done_paths: list[str],
+    full: bool,
+) -> int:
+    if not pending:
+        return 0
+    progress.set_phase("embedding")
+    if on_progress:
+        on_progress(progress)
+    batch = _embed_batch(pending, config)
+    progress.set_phase("upserting")
+    if on_progress:
+        on_progress(progress)
+    upsert_chunks(config, batch)
+    written = len(batch)
+    paths_written = {
+        str(Path(chunk.metadata.get("path", "")).expanduser().resolve())
+        for chunk in batch
+        if chunk.metadata.get("path")
+    }
+    for path in sorted(paths_written):
+        if path not in done_paths:
+            done_paths.append(path)
+    if full and done_paths:
+        save_checkpoint(
+            config,
+            processed_paths=done_paths,
+            phase=progress.phase,
+            full=True,
+        )
+    pending.clear()
+    return written
+
+
 def _make_cli_bar(total: int, enabled: bool):
     if not enabled or total <= 0:
         return None
@@ -87,10 +143,17 @@ def run_index(
     if full and resume:
         checkpoint = load_checkpoint(config)
         if checkpoint and checkpoint.get("full"):
-            resumed_paths = list(checkpoint.get("processed") or [])
+            raw_paths = list(checkpoint.get("processed") or [])
             reset_store_cache()
+            resumed_paths = _checkpoint_confirmed_paths(config, raw_paths)
+            skipped = len(raw_paths) - len(resumed_paths)
+            if skipped:
+                logger.warning(
+                    "Checkpoint: %d файлов без чанков в Chroma — будут проиндексированы заново",
+                    skipped,
+                )
             logger.info(
-                "Возобновление индексации: пропуск %d уже обработанных файлов",
+                "Возобновление индексации: пропуск %d файлов с записанными чанками",
                 len(resumed_paths),
             )
         else:
@@ -98,8 +161,7 @@ def run_index(
 
     if full and not resume:
         clear_checkpoint(config)
-        reset_store_cache()
-        get_collection(config, reset=True)
+        reset_collection_store(config)
         logger.info("Коллекция '%s' пересоздана", config.store.collection)
 
     files_deleted = 0
@@ -170,32 +232,31 @@ def run_index(
                 files_done=processed_done,
             )
             if len(pending) >= config.embeddings.batch_size:
-                progress.set_phase("embedding")
-                if on_progress:
-                    on_progress(progress)
-                batch = _embed_batch(pending, config)
-                progress.set_phase("upserting")
-                if on_progress:
-                    on_progress(progress)
-                upsert_chunks(config, batch)
-                total_chunks += len(batch)
+                total_chunks += _flush_pending_chunks(
+                    config,
+                    pending,
+                    progress=progress,
+                    on_progress=on_progress,
+                    done_paths=done_paths,
+                    full=full,
+                )
                 progress.update_chunks_stats(
                     produced=len(all_chunks),
                     written=total_chunks,
                     files_done=processed_done,
                 )
-                pending.clear()
                 if on_progress:
                     on_progress(progress)
                 logger.info("Записано чанков: %d", total_chunks)
-            done_paths.append(str(Path(entry.path).resolve()))
-            if full:
-                save_checkpoint(
-                    config,
-                    processed_paths=done_paths,
-                    phase=progress.phase,
-                    full=True,
-                )
+            elif not file_chunks:
+                done_paths.append(str(Path(entry.path).resolve()))
+                if full:
+                    save_checkpoint(
+                        config,
+                        processed_paths=done_paths,
+                        phase=progress.phase,
+                        full=True,
+                    )
         except Exception as exc:
             errors += 1
             progress.errors = errors
@@ -206,15 +267,14 @@ def run_index(
 
     _check_cancel(should_cancel)
     if pending:
-        progress.set_phase("embedding")
-        if on_progress:
-            on_progress(progress)
-        batch = _embed_batch(pending, config)
-        progress.set_phase("upserting")
-        if on_progress:
-            on_progress(progress)
-        upsert_chunks(config, batch)
-        total_chunks += len(batch)
+        total_chunks += _flush_pending_chunks(
+            config,
+            pending,
+            progress=progress,
+            on_progress=on_progress,
+            done_paths=done_paths,
+            full=full,
+        )
         progress.update_chunks_stats(
             produced=len(all_chunks),
             written=total_chunks,
@@ -243,8 +303,14 @@ def run_index(
     )
 
     if full:
-        clear_checkpoint(config)
-        save_manifest_from_scan(config)
+        if errors == 0 and (total_chunks > 0 or total_files == 0):
+            clear_checkpoint(config)
+            save_manifest_from_scan(config)
+        elif errors:
+            logger.warning(
+                "Checkpoint сохранён: индексация завершилась с %d ошибками",
+                errors,
+            )
     elif changed_paths is not None:
         update_manifest_after_index(
             config,
