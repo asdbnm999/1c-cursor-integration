@@ -697,7 +697,7 @@ let lastDockerPanelState = {};
 let lastCursorMcpPanel = {};
 
 const DOCKER_LAUNCH_STAGES = [
-  { id: "compose", name: "Папка compose" },
+  { id: "compose", name: "Папка MCP" },
   { id: "build", name: "Сборка образа" },
   { id: "start", name: "Запуск контейнера" },
 ];
@@ -800,8 +800,7 @@ function updateDockerControls(p, buildState = {}) {
       : !running && !containerPresent && !inMcpJson
         ? "Нет контейнера и записи в mcp.json"
         : "",
-    pick: !dockerEnabled ? "Сначала выполните индексацию" : running ? "Остановите контейнер" : "",
-    default: !dockerEnabled ? "Сначала выполните индексацию" : running ? "Остановите контейнер" : "",
+    compose: !dockerEnabled ? "Сначала выполните индексацию" : running ? "Остановите контейнер" : "",
   };
 
   function setBtn(id, disabled, title) {
@@ -826,45 +825,188 @@ function updateDockerControls(p, buildState = {}) {
     !dockerEnabled || (!running && !containerPresent && !inMcpJson),
     reason.remove,
   );
-  setBtn("btn-docker-pick-dir", !dockerEnabled || running, reason.pick);
-  setBtn("btn-docker-use-default-compose", !dockerEnabled || running, reason.default);
+  setComposeDirControls(!dockerEnabled || running, reason.compose);
+  setKbDockerMemDisabled(
+    !dockerEnabled || running,
+    !dockerEnabled ? "Сначала выполните индексацию" : running ? "Остановите контейнер" : "",
+  );
+  applyKbDockerMemLimit(docker);
   const rebuild = el("docker-rebuild");
   if (rebuild) {
     rebuild.disabled = !dockerEnabled || buildBlocked || running;
-    rebuild.title = reason.build;
+    rebuild.title = !dockerEnabled
+      ? "Сначала выполните индексацию"
+      : running
+        ? "Остановите контейнер"
+        : buildBlocked
+          ? "Сборка выполняется…"
+          : "";
+  }
+}
+
+let kbMemSaveTimer = null;
+
+function bindKbDockerMemControls(profileName) {
+  const slider = el("kb-docker-mem-slider");
+  const input = el("kb-docker-mem-input");
+  if (!slider || slider.dataset.bound === "1") return;
+  slider.dataset.bound = "1";
+  if (input) input.dataset.bound = "1";
+
+  function clampValue(raw) {
+    const lo = Number(slider.min);
+    const hi = Number(slider.max);
+    let v = parseInt(raw, 10);
+    if (Number.isNaN(v)) v = lo;
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  async function persist(value) {
+    if (slider.disabled) return;
+    try {
+      const r = await saveKbDockerMemLimit(profileName, value);
+      const saved = String(r.mem_limit_mb);
+      if (document.activeElement !== slider) slider.value = saved;
+      if (input && document.activeElement !== input) input.value = saved;
+      syncKbMemSliderFill(slider);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  function scheduleSave(value) {
+    clearTimeout(kbMemSaveTimer);
+    kbMemSaveTimer = setTimeout(() => persist(value), 400);
+  }
+
+  slider.addEventListener("input", () => {
+    const v = clampValue(slider.value);
+    slider.value = String(v);
+    syncKbMemSliderFill(slider);
+    if (input) input.value = String(v);
+    scheduleSave(v);
+  });
+
+  input.addEventListener("change", () => {
+    const v = clampValue(input.value);
+    input.value = String(v);
+    slider.value = String(v);
+    syncKbMemSliderFill(slider);
+    persist(v);
+  });
+}
+
+function getComposeDirInputValue() {
+  return (el("docker-compose-dir-input")?.value || "").trim();
+}
+
+function setComposeDirControls(disabled, title) {
+  const input = el("docker-compose-dir-input");
+  if (input) {
+    input.disabled = disabled;
+    input.title = title || "";
+  }
+  const pick = el("btn-docker-pick-dir");
+  if (pick) {
+    pick.disabled = disabled;
+    pick.title = title || "";
   }
 }
 
 function updateComposeDirDisplay(docker) {
-  const line = el("docker-compose-dir");
-  if (!line) return;
-  if (docker?.compose_dir) {
-    savedComposeDir = docker.compose_dir;
-    line.className = "runtime-line";
-    line.textContent = `Compose-проект: ${docker.compose_dir}`;
-  } else if (docker?.compose_dir_suggested) {
-    savedComposeDir = "";
-    line.className = "runtime-line";
-    line.textContent = `Директория не выбрана. Рекомендуется: ${docker.compose_dir_suggested}`;
+  const input = el("docker-compose-dir-input");
+  if (!input) return;
+  const saved = (docker?.compose_dir || "").trim();
+  const suggested = (docker?.compose_dir_suggested || "").trim();
+  if (saved) {
+    savedComposeDir = saved;
+    if (document.activeElement !== input) input.value = saved;
   } else {
     savedComposeDir = "";
-    line.textContent = "Директория compose будет запрошена при запуске контейнера";
+    if (document.activeElement !== input) input.value = suggested;
+  }
+  if (suggested) input.placeholder = suggested;
+}
+
+function bindComposeDirInput(profileName) {
+  const input = el("docker-compose-dir-input");
+  if (!input || input.dataset.bound === "1") return;
+  input.dataset.bound = "1";
+
+  input.addEventListener("change", async () => {
+    if (input.disabled) return;
+    const value = getComposeDirInputValue();
+    if (!value || value === savedComposeDir) return;
+    try {
+      await saveComposeDirectory(profileName, value);
+    } catch (e) {
+      alert(e.message);
+      updateComposeDirDisplay({
+        compose_dir: savedComposeDir || undefined,
+        compose_dir_suggested: input.placeholder,
+      });
+    }
+  });
+}
+
+function syncKbMemSliderFill(slider) {
+  if (!slider) return;
+  const min = Number(slider.min);
+  const max = Number(slider.max);
+  const val = Number(slider.value);
+  const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+  slider.style.setProperty("--pct", `${pct}%`);
+}
+
+function applyKbDockerMemLimit(docker) {
+  const ui = docker?.mem_limit_ui || { min: 512, max: 8192, default: 1024 };
+  const value = docker?.mem_limit_mb ?? ui.default ?? 1024;
+  const slider = el("kb-docker-mem-slider");
+  const input = el("kb-docker-mem-input");
+  if (slider) {
+    slider.min = String(ui.min);
+    slider.max = String(ui.max);
+    if (document.activeElement !== slider) slider.value = String(value);
+    syncKbMemSliderFill(slider);
+  }
+  if (input) {
+    input.min = String(ui.min);
+    input.max = String(ui.max);
+    if (document.activeElement !== input) input.value = String(value);
   }
 }
 
-async function pickComposeDirectory(profileName, currentDir, suggestedDir) {
+function setKbDockerMemDisabled(disabled, title) {
+  const slider = el("kb-docker-mem-slider");
+  const input = el("kb-docker-mem-input");
+  if (slider) {
+    slider.disabled = disabled;
+    slider.title = title || "";
+  }
+  if (input) {
+    input.disabled = disabled;
+    input.title = title || "";
+  }
+}
+
+async function saveKbDockerMemLimit(profileName, memLimitMb) {
+  return api("/kb/api/profiles/" + profileName + "/docker/mem-limit", {
+    method: "PUT",
+    body: JSON.stringify({ mem_limit_mb: memLimitMb }),
+  });
+}
+
+async function pickMcpDirectory(profileName, currentDir, suggestedDir) {
   const parts = [];
   if (currentDir) parts.push(`Текущая: ${currentDir}`);
   if (suggestedDir) parts.push(`Рекомендуется: ${suggestedDir}`);
   const hint = parts.length ? parts.join(". ") + ". " : "";
-  const r = await api("/kb/api/pick-directory", {
+  const r = await api("/kb/api/profiles/" + profileName + "/docker/pick-mcp-dir", {
     method: "POST",
-    body: JSON.stringify({
-      title: `${hint}Каталог compose для 1c-kb-${profileName}`,
-    }),
+    body: JSON.stringify({ hint }),
   });
   if (r.cancelled) return null;
-  return r.path;
+  return r.compose_dir;
 }
 
 async function saveComposeDirectory(profileName, composeDir) {
@@ -1710,6 +1852,8 @@ function initProfilePage(name) {
     cursorStatusPoll = setInterval(() => pollCursorStatus(name), CURSOR_STATUS_POLL_MS);
   }
   startProfileRuntimeWatch(name);
+  bindKbDockerMemControls(name);
+  bindComposeDirInput(name);
 
   el("btn-docker-launch")?.addEventListener("click", async () => {
     const launchBtn = el("btn-docker-launch");
@@ -1734,14 +1878,22 @@ function initProfilePage(name) {
       setStepState("docker", "active", "Подготовка…");
 
       let p = await api("/kb/api/profiles/" + name);
-      let composeDir = p.docker?.compose_dir || savedComposeDir;
+      let composeDir = getComposeDirInputValue() || p.docker?.compose_dir || savedComposeDir;
       if (!composeDir) {
+        composeDir = (p.docker?.compose_dir_suggested || "").trim();
+      }
+      if (composeDir && composeDir !== savedComposeDir) {
+        composeDir = await saveComposeDirectory(name, composeDir);
+      } else if (!composeDir) {
         const saved = await api("/kb/api/profiles/" + name + "/docker/compose-dir", {
           method: "PUT",
           body: JSON.stringify({ use_default: true }),
         });
         composeDir = saved.compose_dir;
-        updateComposeDirDisplay({ compose_dir: composeDir });
+        updateComposeDirDisplay({
+          compose_dir: composeDir,
+          compose_dir_suggested: p.docker?.compose_dir_suggested,
+        });
       }
       setDockerLaunchStage("compose", "ok", composeDir);
 
@@ -1795,25 +1947,6 @@ function initProfilePage(name) {
     }
   });
 
-  el("btn-docker-use-default-compose")?.addEventListener("click", async () => {
-    const btn = el("btn-docker-use-default-compose");
-    if (btn?.disabled) {
-      alert(btn.title || "Сначала выполните шаги по порядку");
-      return;
-    }
-    try {
-      await api("/kb/api/profiles/" + name + "/docker/compose-dir", {
-        method: "PUT",
-        body: JSON.stringify({ use_default: true }),
-      });
-      const p = await api("/kb/api/profiles/" + name);
-      updateComposeDirDisplay(p.docker);
-      updateDockerControls(p, lastDockerPanelState);
-    } catch (e) {
-      alert(e.message);
-    }
-  });
-
   el("btn-docker-pick-dir")?.addEventListener("click", async () => {
     const btn = el("btn-docker-pick-dir");
     if (btn?.disabled) {
@@ -1826,13 +1959,18 @@ function initProfilePage(name) {
     }
     try {
       const p = await api("/kb/api/profiles/" + name);
-      const composeDir = await pickComposeDirectory(
+      const composeDir = await pickMcpDirectory(
         name,
-        p.docker?.compose_dir || savedComposeDir,
+        getComposeDirInputValue() || p.docker?.compose_dir || savedComposeDir,
         p.docker?.compose_dir_suggested,
       );
       if (!composeDir) return;
-      await saveComposeDirectory(name, composeDir);
+      updateComposeDirDisplay({
+        compose_dir: composeDir,
+        compose_dir_suggested: p.docker?.compose_dir_suggested,
+      });
+      const p2 = await api("/kb/api/profiles/" + name);
+      updateDockerControls(p2, lastDockerPanelState);
     } catch (e) {
       alert(e.message);
     }

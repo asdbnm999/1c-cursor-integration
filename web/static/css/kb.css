@@ -359,6 +359,18 @@ body:has(dialog[open]) {
   color: var(--muted);
 }
 
+#section-docker .kb-mcp-dir-field {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+
+#section-docker .field-row .text-input {
+  flex: 1;
+  min-width: 12rem;
+}
+
 .path-row {
   display: flex;
   gap: 0.65rem;

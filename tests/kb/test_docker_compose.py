@@ -1,7 +1,15 @@
 from pathlib import Path
 
 from packages.kb.indexer.config import ProfileConfig, DockerConfig, IndexingConfig, ChunkingConfig, EmbeddingsConfig, StoreConfig, McpConfig, DocsConfig
-from packages.kb.indexer.docker_compose import compose_file_path, compose_project_name, render_compose_yaml, write_compose_file
+from packages.kb.indexer.docker_compose import (
+    compose_file_path,
+    compose_project_name,
+    kb_mcp_folder_name,
+    mem_limit_mb_for_config,
+    render_compose_yaml,
+    resolve_mcp_compose_dir,
+    write_compose_file,
+)
 from packages.kb.indexer.docker_names import container_name, image_name
 from packages.kb.indexer.profiles import PROJECT_ROOT
 
@@ -45,6 +53,36 @@ def test_render_compose_yaml_gpu_block():
     text = render_compose_yaml(config)
     assert "nvidia" in text
     assert "capabilities: [gpu]" in text
+
+
+def test_kb_mcp_folder_name():
+    assert kb_mcp_folder_name("testbase") == "1c-kb-testbase"
+
+
+def test_resolve_mcp_compose_dir_creates_subfolder(tmp_path: Path):
+    parent = tmp_path / "DockerMCP"
+    parent.mkdir()
+    resolved = resolve_mcp_compose_dir(parent, "testbase")
+    assert resolved == parent / "1c-kb-testbase"
+
+
+def test_resolve_mcp_compose_dir_keeps_existing_subfolder(tmp_path: Path):
+    target = tmp_path / "1c-kb-testbase"
+    target.mkdir()
+    assert resolve_mcp_compose_dir(target, "testbase") == target.resolve()
+
+
+def test_mem_limit_mb_for_config_uses_profile_value():
+    config = _sample_config("demo", 8302)
+    config.docker.mem_limit_mb = 2048
+    assert mem_limit_mb_for_config(config) == 2048
+
+
+def test_render_compose_yaml_uses_profile_mem_limit():
+    config = _sample_config("mem-demo", 8303)
+    config.docker.mem_limit_mb = 3072
+    text = render_compose_yaml(config)
+    assert "mem_limit: 3072m" in text
 
 
 def test_write_compose_file_creates_yaml(tmp_path: Path):

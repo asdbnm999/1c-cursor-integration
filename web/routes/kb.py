@@ -23,7 +23,13 @@ from packages.kb.indexer.cursor_mcp_config import (
 from packages.kb.indexer.cursor_mcp_status import get_cursor_mcp_status
 from web.cursor_mcp import sync_managed_mcp_entries
 from packages.kb.indexer.docker_build import get_build_state, image_exists, start_build
-from packages.kb.indexer.docker_compose import default_compose_dir
+from packages.kb.indexer.docker_compose import (
+    KB_MEM_LIMIT_UI,
+    default_compose_dir,
+    kb_mcp_folder_name,
+    mem_limit_mb_for_config,
+    resolve_mcp_compose_dir,
+)
 from packages.kb.indexer.docker_manager import (
     docker_available,
     get_container_logs,
@@ -60,6 +66,7 @@ from packages.kb.indexer.profile_ops import (
     create_profile,
     delete_profile_completely,
     save_compose_dir,
+    save_docker_mem_limit,
     save_embeddings_settings,
     save_indexing_settings,
 )
@@ -179,6 +186,9 @@ def _profile_summary(name: str) -> dict:
             "container_id": container.container_id,
             "compose_dir": config.docker.compose_dir,
             "compose_dir_suggested": str(default_compose_dir(name)),
+            "mcp_folder_name": kb_mcp_folder_name(name),
+            "mem_limit_mb": mem_limit_mb_for_config(config),
+            "mem_limit_ui": KB_MEM_LIMIT_UI,
             "image_exists": image_exists(name),
             "build_status": get_build_state(name).status.value,
             "error": container.error,
@@ -671,6 +681,61 @@ def api_docker_build(name: str):
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+@kb_api_bp.post("/profiles/<name>/docker/pick-mcp-dir")
+def api_docker_pick_mcp_dir(name: str):
+    """Выбор родительского каталога → создание 1c-kb-<profile> внутри."""
+    from packages.kb.indexer.native_dialogs import pick_directory
+
+    try:
+        require_indexed_profile(name)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    payload = request.get_json(silent=True) or {}
+    hint = (payload.get("hint") or "").strip()
+    title = f"{hint}Каталог для MCP (будет создана папка {kb_mcp_folder_name(name)})".strip()
+    picked = pick_directory(title)
+    if not picked:
+        return jsonify({"cancelled": True})
+
+    try:
+        target = resolve_mcp_compose_dir(picked, name)
+        saved = save_compose_dir(name, target)
+        return jsonify({
+            "ok": True,
+            "compose_dir": str(saved),
+            "parent": str(Path(picked).expanduser().resolve()),
+            "mcp_folder_name": kb_mcp_folder_name(name),
+        })
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@kb_api_bp.put("/profiles/<name>/docker/mem-limit")
+def api_docker_mem_limit(name: str):
+    data = request.get_json(force=True)
+    try:
+        require_indexed_profile(name)
+        value = save_docker_mem_limit(name, int(data.get("mem_limit_mb", 0)))
+        config = load_config(name)
+        compose_updated = False
+        if (config.docker.compose_dir or "").strip():
+            from packages.kb.indexer.docker_compose import write_compose_file
+
+            write_compose_file(Path(config.docker.compose_dir).expanduser(), config)
+            compose_updated = True
+        return jsonify({
+            "ok": True,
+            "mem_limit_mb": value,
+            "mem_limit_ui": KB_MEM_LIMIT_UI,
+            "compose_updated": compose_updated,
+        })
+    except (TypeError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
 @kb_api_bp.put("/profiles/<name>/docker/compose-dir")
 def api_docker_compose_dir(name: str):
     data = request.get_json(force=True)
@@ -782,6 +847,9 @@ def api_docker_status(name: str):
         "container_id": status.container_id,
         "compose_dir": config.docker.compose_dir,
         "compose_dir_suggested": str(default_compose_dir(name)),
+        "mcp_folder_name": kb_mcp_folder_name(name),
+        "mem_limit_mb": mem_limit_mb_for_config(config),
+        "mem_limit_ui": KB_MEM_LIMIT_UI,
         "error": status.error,
     })
 

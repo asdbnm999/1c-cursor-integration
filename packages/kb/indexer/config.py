@@ -76,6 +76,7 @@ class McpConfig:
 class DockerConfig:
     compose_dir: str = ""
     gpu: bool = False  # NVIDIA runtime в compose (опционально)
+    mem_limit_mb: int = 1024  # mem_limit Docker-контейнера MCP
 
 
 @dataclass
@@ -200,6 +201,7 @@ def load_config(profile: str | Path | None = None) -> ProfileConfig:
         docker=DockerConfig(
             compose_dir=str(docker_raw.get("compose_dir", "") or "").strip(),
             gpu=bool(docker_raw.get("gpu", False)),
+            mem_limit_mb=int(docker_raw.get("mem_limit_mb") or 1024),
         ),
         config_path=config_path,
         git_branch=str(profile_meta.get("git_branch", "") or ""),

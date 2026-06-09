@@ -117,6 +117,28 @@ def ensure_default_compose_dir(profile_name: str) -> str | None:
     return str(target)
 
 
+def save_docker_mem_limit(profile_name: str, mem_limit_mb: int) -> int:
+    from packages.kb.indexer.docker_compose import KB_MEM_LIMIT_UI
+
+    config_path = profile_config_path(profile_name)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Профиль не найден: {profile_name}")
+
+    lo = int(KB_MEM_LIMIT_UI["min"])
+    hi = int(KB_MEM_LIMIT_UI["max"])
+    value = max(lo, min(hi, int(mem_limit_mb)))
+
+    with config_path.open(encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    raw.setdefault("docker", {})
+    raw["docker"]["mem_limit_mb"] = value
+    config_path.write_text(
+        yaml.dump(raw, allow_unicode=True, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+    )
+    return value
+
+
 def save_compose_dir(profile_name: str, compose_dir: str | Path) -> Path:
     config_path = profile_config_path(profile_name)
     if not config_path.exists():

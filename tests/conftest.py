@@ -18,7 +18,7 @@ EDT_FIXTURE = Path(
     os.environ.get("ONEC_EDT_FIXTURE", Path.home() / "Desktop" / "EDT-fixture")
 ).expanduser()
 
-pytest_plugins = []
+pytest_plugins = ["tests.kb.conftest"]
 
 
 def pytest_configure(config):

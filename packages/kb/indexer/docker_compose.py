@@ -10,10 +10,24 @@ from packages.kb.paths import PROJECT_ROOT
 
 COMPOSE_FILENAME = "docker-compose.yml"
 DEFAULT_MEM_LIMIT_MB = 1024
+KB_MEM_LIMIT_UI = {"min": 512, "max": 8192, "default": DEFAULT_MEM_LIMIT_MB}
+
+
+def kb_mcp_folder_name(profile_name: str) -> str:
+    return f"1c-kb-{profile_name}"
 
 
 def default_compose_dir(profile_name: str) -> Path:
-    return Path.home() / "DockerMCP" / f"1c-kb-{profile_name}"
+    return Path.home() / "DockerMCP" / kb_mcp_folder_name(profile_name)
+
+
+def resolve_mcp_compose_dir(picked: str | Path, profile_name: str) -> Path:
+    """Родительский каталог → …/1c-kb-<profile>; уже выбранная подпапка — без вложения."""
+    path = Path(picked).expanduser().resolve()
+    expected = kb_mcp_folder_name(profile_name)
+    if path.name == expected:
+        return path
+    return path / expected
 
 
 def compose_project_name(profile_name: str) -> str:
@@ -24,7 +38,11 @@ def compose_file_path(compose_dir: Path) -> Path:
     return compose_dir / COMPOSE_FILENAME
 
 
-def _resolve_mem_limit_mb() -> int:
+def mem_limit_mb_for_config(config: ProfileConfig) -> int:
+    """Лимит RAM контейнера MCP: профиль → глобальный settings.kb → дефолт."""
+    profile_limit = int(getattr(config.docker, "mem_limit_mb", 0) or 0)
+    if profile_limit > 0:
+        return profile_limit
     try:
         from web.settings import load_settings
 
@@ -60,7 +78,7 @@ def render_compose_yaml(config: ProfileConfig) -> str:
     img = image_name(profile_name)
     project = compose_project_name(profile_name)
     gpu_block = _gpu_deploy_block(config)
-    mem_limit = _resolve_mem_limit_mb()
+    mem_limit = mem_limit_mb_for_config(config)
 
     return f"""# 1C Knowledge Base MCP — профиль {profile_name}
 # Сгенерировано 1C:Cursor. Образ собирается отдельно (кнопка «Собрать образ»).

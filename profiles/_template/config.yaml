@@ -55,3 +55,4 @@ mcp:
 docker:
   compose_dir: ""
   gpu: false          # true — NVIDIA runtime в docker-compose (или KB_DOCKER_GPU=1)
+  mem_limit_mb: 1024  # лимит RAM контейнера MCP (MiB)

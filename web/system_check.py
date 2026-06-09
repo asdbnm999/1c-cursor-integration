@@ -243,8 +243,14 @@ def estimate_mcp_ram_mb() -> dict[str, Any]:
     try:
         from packages.kb.indexer.profiles import list_profiles
 
+        from packages.kb.indexer.config import load_config
+        from packages.kb.indexer.docker_compose import mem_limit_mb_for_config
+
         for name in list_profiles():
-            kb_mb = 512
+            try:
+                kb_mb = mem_limit_mb_for_config(load_config(name))
+            except Exception:
+                kb_mb = 512
             breakdown.append({"stack": f"KB «{name}»", "estimate_mb": kb_mb})
             total_mb += kb_mb
     except Exception:
