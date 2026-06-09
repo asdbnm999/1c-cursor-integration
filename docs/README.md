@@ -10,7 +10,7 @@
 
 | Вы | Начните с |
 |----|-----------|
-| Пользователь Cursor + 1С | [Корневой README](../README.md) → мастер на dashboard → [01-plugins](01-plugins.md) |
+| Пользователь Cursor + 1С | **[Визуальный быстрый старт](quick-start.md)** → [корневой README](../README.md) |
 | Настройка MCP | [02-mcp-docker](02-mcp-docker.md) → [05-cursor-mcp-setup](05-cursor-mcp-setup.md) |
 | Индексация конфигурации | [03-knowledge-base](03-knowledge-base.md) |
 | Правила для AI | [04-rules-generator](04-rules-generator.md) |
@@ -24,6 +24,7 @@
 
 | Файл | Раздел | Содержание |
 |------|--------|------------|
+| [quick-start.md](quick-start.md) | Все § | Визуальная пошаговая настройка со скриншотами |
 | [01-plugins.md](01-plugins.md) | §1 VS-плагины | VSIX, каталоги Cursor, конфликт версий, API |
 | [02-mcp-docker.md](02-mcp-docker.md) | §2 MCP Docker | SearXNG, Syntax, HBK, порты 82xx, ресурсы, deploy |
 | [03-knowledge-base.md](03-knowledge-base.md) | §3 KB | Профили, индексация, watch, MCP tools, 83xx |

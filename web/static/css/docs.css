@@ -150,3 +150,13 @@
   font-weight: 600;
   color: var(--text);
 }
+
+.docs-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1rem 0 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 24px color-mix(in srgb, var(--bg) 40%, transparent);
+}

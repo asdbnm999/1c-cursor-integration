@@ -6,6 +6,9 @@
 **Документация:** [docs/README.md](docs/README.md)  
 **Для AI-агентов:** [docs/AGENT_HANDOFF.md](docs/AGENT_HANDOFF.md)
 
+> **Первый запуск?** Визуальная пошаговая инструкция со скриншотами: **[docs/quick-start.md](docs/quick-start.md)**  
+> В приложении: http://127.0.0.1:8080/docs/quick-start.md
+
 ---
 
 ## Что это
@@ -57,13 +60,11 @@ python -m web.app
 
 ### Рекомендуемый порядок настройки
 
-1. **§1 Плагины** — установите оба bundled VSIX (`/plugins/`).
-2. **§2 MCP** — включите SearXNG и/или Syntax, сгенерируйте compose, deploy, apply `mcp.json`. Для Syntax укажите путь к `shcntx_ru.hbk`.
-3. **§3 KB** — создайте профиль, проиндексируйте проект EDT/XML, поднимите Docker, apply MCP.
-4. **§4 Правила** — сгенерируйте `.md` в `.cursor/rules/` проекта.
-5. **Cursor** → Settings → MCP → **Refresh**.
+Скриншоты и пояснения к каждому шагу — в **[визуальном быстром старте](docs/quick-start.md)**.
 
-Подробнее: [docs/05-cursor-mcp-setup.md](docs/05-cursor-mcp-setup.md).
+Кратко: **§1 Плагины** → **§2 MCP** (Deploy + `mcp.json`) → **§3 KB** (профиль, индекс, Docker, `mcp.json`) → **§4 Правила** → **Cursor → MCP → Refresh**.
+
+Подробнее по MCP: [docs/05-cursor-mcp-setup.md](docs/05-cursor-mcp-setup.md).
 
 ---
 
