@@ -19,6 +19,7 @@ from web.mcp.service import (
     get_server_cfg,
     get_standard_mcp_status,
     remove_server,
+    save_docker_root,
     stop_server,
     update_settings_payload,
 )
@@ -185,6 +186,27 @@ def api_apply_mcp():
 @mcp_api_bp.route("/preview-mcp", methods=["POST"])
 def api_preview_mcp():
     return jsonify(apply_mcp_for_enabled(dry_run=True))
+
+
+@mcp_api_bp.route("/docker-root", methods=["PUT"])
+def api_docker_root():
+    payload = request.get_json(silent=True) or {}
+    root = payload.get("root", "")
+    if not str(root).strip():
+        return jsonify({"ok": False, "message": "Укажите root"}), 400
+    result = save_docker_root(str(root))
+    status = 200 if result.get("ok") else 400
+    return jsonify(result), status
+
+
+@mcp_api_bp.route("/pick-docker-root", methods=["POST"])
+def api_pick_docker_root():
+    path = pick_directory("Выберите корень Docker (каталог для searxng/ и 1c-syntax/)")
+    if not path:
+        return jsonify({"cancelled": True})
+    result = save_docker_root(path)
+    status = 200 if result.get("ok") else 400
+    return jsonify(result), status
 
 
 @mcp_api_bp.route("/pick-compose-dir", methods=["POST"])

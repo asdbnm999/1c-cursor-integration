@@ -580,9 +580,13 @@
         ports.classList.add("hidden");
       }
     }
+    const rootInput = $("docker-root-input");
+    if (rootInput && data.docker?.docker_root && document.activeElement !== rootInput) {
+      rootInput.value = data.docker.docker_root;
+    }
     const rootLine = $("docker-root-line");
     if (rootLine && data.docker) {
-      rootLine.textContent = `Docker root: ${data.docker.docker_root || "—"} · ${data.docker.message || ""}`;
+      rootLine.textContent = `Docker daemon: ${data.docker.message || "—"}`;
     }
     const cfgPath = $("mcp-config-path");
     if (cfgPath && data.mcp_config) {
@@ -830,6 +834,67 @@
       $("errors-logs").textContent = res.logs_excerpt;
     }
   }
+
+  async function saveDockerRoot(root, { confirmChange = true } = {}) {
+    const trimmed = (root || "").trim();
+    if (!trimmed) {
+      alert("Укажите путь к корню Docker.");
+      return null;
+    }
+    if (
+      confirmChange &&
+      !confirm(
+        "Сменить корень Docker?\n\n" +
+          "Каталоги compose по умолчанию (searxng/, 1c-syntax/) обновятся. " +
+          "Запущенные контейнеры останутся в старых путях — может понадобиться Deploy."
+      )
+    ) {
+      return null;
+    }
+    const res = await api("/mcp/api/docker-root", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ root: trimmed }),
+    });
+    if (!res.ok) {
+      alert(res.message || "Не удалось сохранить корень Docker");
+      return null;
+    }
+    if (res.warnings?.length) {
+      alert(res.warnings.join("\n\n"));
+    }
+    return res;
+  }
+
+  $("btn-save-docker-root")?.addEventListener("click", async () => {
+    const res = await saveDockerRoot($("docker-root-input")?.value);
+    if (res) refresh();
+  });
+
+  $("btn-pick-docker-root")?.addEventListener("click", async () => {
+    const res = await api("/mcp/api/pick-docker-root", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (res.cancelled) return;
+    if (!res.ok) {
+      alert(res.message || "Не удалось сохранить корень Docker");
+      return;
+    }
+    if (res.warnings?.length) {
+      alert(res.warnings.join("\n\n"));
+    }
+    refresh();
+  });
+
+  $("btn-docker-root-default")?.addEventListener("click", async () => {
+    const def = lastStatus?.default_docker_root || "";
+    const input = $("docker-root-input");
+    if (input && def) input.value = def;
+    const res = await saveDockerRoot(def || input?.value);
+    if (res) refresh();
+  });
 
   $("btn-preview-mcp")?.addEventListener("click", async () => {
     const res = await api("/mcp/api/preview-mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });

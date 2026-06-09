@@ -52,3 +52,56 @@ def test_mcp_preview_mcp():
     assert res.status_code == 200
     data = res.get_json()
     assert "diff" in data
+
+
+def test_mcp_page_has_docker_root_editor():
+    app = create_app()
+    client = app.test_client()
+    html = client.get("/mcp/").get_data(as_text=True)
+    assert "docker-root-input" in html
+    assert "btn-save-docker-root" in html
+
+
+def test_mcp_docker_root_put(tmp_path, monkeypatch):
+    from web.settings import load_settings, save_settings
+
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr("web.paths.SETTINGS_PATH", settings_path)
+    monkeypatch.setattr("web.paths.SETTINGS_EXAMPLE_PATH", tmp_path / "missing.example")
+
+    old_root = tmp_path / "old_docker"
+    new_root = tmp_path / "new_docker"
+    old_root.mkdir()
+    save_settings(load_settings())
+    data = load_settings()
+    data["docker"]["root"] = str(old_root)
+    save_settings(data)
+
+    app = create_app()
+    client = app.test_client()
+    res = client.put("/mcp/api/docker-root", json={"root": str(new_root)})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["ok"] is True
+    assert body["docker_root"] == str(new_root.resolve())
+
+    updated = load_settings()
+    assert updated["docker"]["root"] == str(new_root.resolve())
+    assert updated["mcp"]["standard"]["searxng"]["compose_dir"] == str(new_root / "searxng")
+    assert updated["mcp"]["standard"]["1c-syntax-helper"]["compose_dir"] == str(new_root / "1c-syntax")
+
+
+def test_mcp_docker_root_rejects_empty():
+    app = create_app()
+    client = app.test_client()
+    res = client.put("/mcp/api/docker-root", json={"root": "   "})
+    assert res.status_code == 400
+    assert res.get_json()["ok"] is False
+
+
+def test_mcp_status_includes_default_docker_root():
+    app = create_app()
+    client = app.test_client()
+    data = client.get("/mcp/api/status?health=0").get_json()
+    assert "default_docker_root" in data
+    assert data["default_docker_root"]

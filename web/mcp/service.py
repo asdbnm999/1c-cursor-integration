@@ -40,12 +40,71 @@ from web.mcp_compose import (
     mcp_url,
 )
 from web.mcp.errors_catalog import build_error_help
+from web.paths import DEFAULT_DOCKER_ROOT
 from web.settings import load_settings, save_settings
 from web.system_check import get_docker_status, get_port_registry, is_port_free
 
 
 def _docker_root() -> Path:
     return Path(load_settings().get("docker", {}).get("root", "~/DockerMCP")).expanduser()
+
+
+def _mcp_settings_key(slug: str) -> str:
+    return slug if slug != SYNTAX_SLUG else "1c-syntax-helper"
+
+
+def save_docker_root(root: str) -> dict[str, Any]:
+    """Сохранить корень Docker и обновить compose_dir, если они были по умолчанию."""
+    raw = (root or "").strip()
+    if not raw:
+        return {"ok": False, "message": "Укажите путь к каталогу Docker"}
+
+    path = Path(raw).expanduser()
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return {"ok": False, "message": f"Не удалось создать каталог: {exc}"}
+    if not path.is_dir():
+        return {"ok": False, "message": "Путь не является каталогом"}
+
+    old_root = _docker_root()
+    resolved = path.resolve()
+    warnings: list[str] = []
+
+    settings = load_settings()
+    std = settings.setdefault("mcp", {}).setdefault("standard", {})
+
+    for slug in (SEARXNG_SLUG, SYNTAX_SLUG):
+        key = _mcp_settings_key(slug)
+        entry = dict(std.get(key, {}))
+        old_default = default_compose_dir(old_root, slug).resolve()
+        current_raw = (entry.get("compose_dir") or "").strip()
+        current = Path(current_raw).expanduser().resolve() if current_raw else None
+        if current is None or current == old_default:
+            entry["compose_dir"] = str(default_compose_dir(resolved, slug))
+        else:
+            warnings.append(
+                f"{slug}: каталог compose оставлен без изменений ({current_raw}). "
+                "При необходимости укажите новый путь на карточке сервера."
+            )
+        std[key] = entry
+
+        stack = mcp_stack_name(slug)
+        if container_status(stack).get("running"):
+            warnings.append(
+                f"Контейнер {stack} всё ещё запущен — после смены корня может понадобиться Deploy в новом каталоге."
+            )
+
+    settings.setdefault("docker", {})["root"] = str(resolved)
+    save_settings(settings)
+
+    return {
+        "ok": True,
+        "docker_root": str(resolved),
+        "docker": get_docker_status(resolved),
+        "warnings": warnings,
+        "previous_root": str(old_root.resolve()),
+    }
 
 
 def _default_mcp_port(slug: str) -> int:
@@ -105,7 +164,7 @@ def get_server_cfg(slug: str) -> dict[str, Any]:
 def save_server_cfg(slug: str, updates: dict[str, Any]) -> dict[str, Any]:
     settings = load_settings()
     std = settings.setdefault("mcp", {}).setdefault("standard", {})
-    key = slug if slug != SYNTAX_SLUG else "1c-syntax-helper"
+    key = _mcp_settings_key(slug)
     current = get_server_cfg(slug)
     current.update(updates)
     std[key] = current
@@ -274,6 +333,7 @@ def get_standard_mcp_status(*, with_health: bool = True) -> dict[str, Any]:
     return {
         "section_status": section,
         "docker": docker,
+        "default_docker_root": str(DEFAULT_DOCKER_ROOT),
         "mcp_config": mcp_cfg,
         "servers": servers_out,
         "resource_presets": RESOURCE_PRESETS,
