@@ -25,7 +25,7 @@
 2. **Анализ** — отчёт `analyze_export()`.
 3. **Основные параметры** — поля формы + modal «Дополнительные правила».
 4. **Доп. правила** — modal; `create_metadata`: первое открытие **«нет»**, «Рекомендуемые» — **«с разрешения»**.
-5. **MCP** — toggles по `mcp.json` (SearXNG, Syntax, KB-профили).
+5. **MCP** — toggles по `mcp.json` (SearXNG, Syntax, KB-профили). При включённом KB-профиле в правила попадает таблица **5 tools** MCP (`search_project`, `get_object`, `list_by_relation`, `get_module`, `find_references`), параметры и матрица «вопрос → tool»; при нескольких профилях — напоминание спросить базу в начале диалога.
 6. **Генерация** — оба `.md`, предпросмотр.
 
 Следующий блок доступен после «зелёного» предыдущего.
@@ -73,7 +73,28 @@
 
 Логика в `packages/rules/` (`analyze_export`, `generate_rules_bundle`). Публичный API для тестов и CI, не отдельный CLI.
 
+## Пример блока MCP (KB включена)
+
+Фрагмент из `packages/rules/mcp_rules.py` → `build_mcp_rules_section()`:
+
+```markdown
+- **База знаний проекта:** использовать MCP `1c-kb-myconf` для работы с метаданными и кодом **этой** конфигурации. Не парсить XML/BSL вручную, если ответ можно получить через tools ниже.
+
+  **Инструменты MCP `1c-kb-myconf` (5 методов):**
+
+  | Tool | Когда вызывать |
+  |------|----------------|
+  | `search_project` | Не знаешь точное имя объекта; поиск по смыслу по всей конфигурации |
+  | `get_object` | Карточка объекта: структура, движения, проведение |
+  ...
+
+  **Матрица «вопрос → tool»:** …
+```
+
+Полная спецификация tools — `docs/kb/AGENT_HANDOFF.md` §7.
+
 ## См. также
 
 - [05-cursor-mcp-setup.md](05-cursor-mcp-setup.md) — merge mcp.json
+- [kb/AGENT_HANDOFF.md](kb/AGENT_HANDOFF.md) §7 — API KB MCP
 - ТЗ §12

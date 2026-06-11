@@ -4,6 +4,95 @@ from __future__ import annotations
 
 from typing import Any
 
+# Синхронизировать с packages/kb/mcp_server/server.py → MCP_TOOLS
+KB_MCP_TOOLS = (
+    "search_project",
+    "get_object",
+    "list_by_relation",
+    "get_module",
+    "find_references",
+)
+
+KB_MCP_DEPRECATED_TOOLS = (
+    "get_register_movements",
+    "get_module_summary",
+    "list_object_modules",
+    "list_subsystems",
+    "search_by_subsystem",
+)
+
+
+def _build_kb_tools_section(kb_profiles: list[str]) -> list[str]:
+    """Блок tools MCP базы знаний (только при включённом KB-профиле)."""
+    if not kb_profiles:
+        return []
+
+    multi = len(kb_profiles) > 1
+    server = kb_profiles[0] if not multi else "1c-kb-…"
+
+    lines: list[str] = [""]
+
+    if multi:
+        lines.extend(
+            [
+                "  После выбора базы вызывать tools **выбранного** MCP-сервера (`1c-kb-…`).",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            f"  **Инструменты MCP `{server}` ({len(KB_MCP_TOOLS)} методов):**",
+            "",
+            "  | Tool | Когда вызывать |",
+            "  |------|----------------|",
+            "  | `search_project` | Не знаешь точное имя объекта; поиск по смыслу по всей конфигурации |",
+            "  | `get_object` | Карточка объекта: структура, движения, проведение |",
+            "  | `list_by_relation` | Обратные связи: кто двигает регистр, что в подсистеме |",
+            "  | `get_module` | Точечное чтение BSL: процедура, обработчик, фрагмент |",
+            "  | `find_references` | Где используется идентификатор (процедура, регистр, реквизит) |",
+            "",
+            "  **Параметры ключевых tools:**",
+            "",
+            "  - `search_project(query, limit=8, object_type=\"\", hybrid=true)` — в ответе тип совпадения: "
+            "`metadata` / `bsl` / `query_text`",
+            "  - `get_object(object_type, object_name, detail=\"brief\")` — `detail`: `brief` | `structure` | "
+            "`movements` | `posting` | `full`",
+            "  - `list_by_relation(relation, object_type=\"\", object_name=\"\", limit=50)` — `relation`: "
+            "`documents_by_register` | `registers_by_document` | `references_to_object` | `objects_in_subsystem`",
+            "  - `get_module(module_path, mode=\"summary\", name=\"\", line_from=0, line_to=0)` — `mode`: "
+            "`summary` | `procedure` | `event` | `fragment`",
+            "  - `find_references(identifier, limit=30, object_type=\"\", scope=\"all\")` — `scope`: `all` | "
+            "`metadata` | `bsl` | `queries`",
+            "",
+            "  **Матрица «вопрос → tool»:**",
+            "",
+            "  | Вопрос пользователя | Tool | Параметры |",
+            "  |---------------------|------|-----------|",
+            "  | Где в конфигурации про X? | `search_project` | `query` |",
+            "  | Что за объект? | `get_object` | `detail=\"brief\"` |",
+            "  | Реквизиты, ТЧ, измерения регистра? | `get_object` | `detail=\"structure\"` |",
+            "  | Какие регистры двигает документ? | `get_object` | `detail=\"movements\"` |",
+            "  | Как проводится документ? | `get_object` | `detail=\"posting\"` |",
+            "  | Кто двигает регистр? | `list_by_relation` | `relation=\"documents_by_register\"` |",
+            "  | Что входит в подсистему? | `list_by_relation` | `relation=\"objects_in_subsystem\"` |",
+            "  | Где используется имя/процедура? | `find_references` | `identifier`, при необходимости `scope` |",
+            "  | Покажи процедуру или обработчик | `get_module` | `mode=\"procedure\"` или `mode=\"event\"`, `name=...` |",
+            "",
+            "  **Разделение ролей MCP (не смешивать):**",
+            f"  - KB (`{server}`) — структура и код **этой конфигурации** (метаданные, BSL, запросы, связи).",
+            "  - `1c-syntax-helper` — синтаксис **платформы** 1С (`Новый Запрос`, `ВидДвиженияНакопления`, "
+            "методы глобального контекста).",
+            "  - `searxng` — только веб-поиск (статьи, релизы, интеграции).",
+            "",
+            "  **Запрещено для задач по конфигурации:** угадывать состав метаданных; читать XML/BSL целиком "
+            "«с диска», если есть tool KB; вызывать устаревшие имена "
+            f"({', '.join(f'`{t}`' for t in KB_MCP_DEPRECATED_TOOLS)}) — их в MCP больше нет.",
+        ]
+    )
+
+    return lines
+
 
 def build_mcp_rules_section(mcp: dict[str, Any]) -> str:
     """
@@ -40,7 +129,8 @@ def build_mcp_rules_section(mcp: dict[str, Any]) -> str:
     if syntax:
         lines.append(
             "- **Справка платформы 1С:** после написания или изменения кода 1С — **обязательное** "
-            "ревью через MCP `1c-syntax-helper` (проверка методов, параметров, существования API)."
+            "ревью через MCP `1c-syntax-helper` (проверка методов, параметров, существования API). "
+            "Для синтаксиса платформы — **не** KB."
         )
     else:
         lines.append(
@@ -52,8 +142,9 @@ def build_mcp_rules_section(mcp: dict[str, Any]) -> str:
         if len(kb_profiles) == 1:
             key = kb_profiles[0]
             lines.append(
-                f"- **База знаний проекта:** использовать MCP `{key}` для поиска по метаданным "
-                "и коду **этой** конфигурации."
+                f"- **База знаний проекта:** использовать MCP `{key}` для работы с метаданными "
+                "и кодом **этой** конфигурации. Не парсить XML/BSL вручную, если ответ можно получить "
+                "через tools ниже."
             )
         else:
             keys = ", ".join(f"`{k}`" for k in kb_profiles)
@@ -62,6 +153,7 @@ def build_mcp_rules_section(mcp: dict[str, Any]) -> str:
                 "**В начале каждого диалога** спросить пользователя, какую базу использовать, "
                 "если задача связана с кодом или метаданными конфигурации."
             )
+        lines.extend(_build_kb_tools_section(kb_profiles))
     else:
         lines.append(
             "- **База знаний проекта (KB):** не подключена — не выдумывать структуру конфигурации; "

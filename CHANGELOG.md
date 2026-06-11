@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed (Rules)
+
+- Правила Cursor: в раздел MCP добавлено описание **5 tools** базы знаний (таблицы, параметры, матрица «вопрос → tool», разделение ролей KB / syntax-helper / searxng)
+
 ### Changed (KB MCP)
 
 - Поверхность MCP сведена к **5 методам**: `search_project`, `get_object`, `list_by_relation`, `get_module`, `find_references`

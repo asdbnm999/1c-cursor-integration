@@ -20,7 +20,7 @@
 | 1 | `/plugins/` | Установка VSIX (BSL, дерево конфигурации) | [01-plugins.md](docs/01-plugins.md) |
 | 2 | `/mcp/` | Docker: SearXNG + 1C Syntax Helper | [02-mcp-docker.md](docs/02-mcp-docker.md) |
 | 3 | `/kb/` | Векторная база знаний вашей конфигурации | [03-knowledge-base.md](docs/03-knowledge-base.md) |
-| 4 | `/rules/` | Генерация markdown-правил для AI | [04-rules-generator.md](docs/04-rules-generator.md) |
+| 4 | `/rules/` | Генерация markdown-правил для AI (в т.ч. 5 tools MCP KB, матрица «вопрос → tool») | [04-rules-generator.md](docs/04-rules-generator.md) |
 
 На **dashboard** (`/`): статусы разделов, диагностика Docker/RAM, оценка RAM MCP-стеков, проверка MCP, мастер первого запуска, экспорт/импорт настроек.
 
@@ -64,6 +64,8 @@ python -m web.app
 
 Кратко: **§1 Плагины** → **§2 MCP** (Deploy + `mcp.json`) → **§3 KB** (профиль, индекс, Docker, `mcp.json`) → **§4 Правила** → **Cursor → MCP → Refresh**.
 
+В §4 в сгенерированный регламент попадает раздел **MCP-серверы Cursor**: роли `searxng`, `1c-syntax-helper` и базы знаний. При включённом KB-профиле — таблица **5 tools** (`search_project`, `get_object`, `list_by_relation`, `get_module`, `find_references`), параметры и матрица «вопрос → tool», чтобы агент выбирал нужный вызов вместо ручного парсинга XML/BSL.
+
 Подробнее по MCP: [docs/05-cursor-mcp-setup.md](docs/05-cursor-mcp-setup.md).
 
 ---
@@ -91,7 +93,7 @@ python -m web.app
 pytest -q
 ```
 
-**256 passed** (+3 skipped без локальных фикстур 1С). CI: `.github/workflows/tests.yml` (Python 3.11–3.13).
+**309 passed** (+3 skipped без локальных фикстур 1С). CI: `.github/workflows/tests.yml` (Python 3.11–3.13).
 
 ---
 
@@ -102,12 +104,12 @@ pytest -q
 ├── web/                 # Flask: app, routes, sections, cursor_mcp
 ├── packages/
 │   ├── kb/              # Индексатор, MCP server, Docker (vendored)
-│   └── rules/           # Парсер правил (vendored)
+│   └── rules/           # Генератор правил, MCP-секция с KB tools (vendored)
 ├── assets/extensions/   # Bundled VSIX
 ├── docker_templates/    # Шаблоны compose §2
 ├── data/                # Runtime (gitignore): settings, profiles, hf_cache
 ├── profiles/_template/  # Шаблон config.yaml профиля KB
-├── tests/               # pytest (256+)
+├── tests/               # pytest (309+)
 ├── scripts/run_tests.sh
 └── docs/                # Пользовательская и техническая документация §22
 ```

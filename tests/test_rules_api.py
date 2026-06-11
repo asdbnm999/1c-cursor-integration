@@ -149,6 +149,46 @@ def test_mcp_rules_section_text():
     assert "начале каждого диалога" in text
 
 
+def test_mcp_rules_kb_tools_listed():
+    from packages.rules.mcp_rules import KB_MCP_TOOLS, build_mcp_rules_section
+
+    text = build_mcp_rules_section({"searxng": False, "syntax_helper": False, "kb_profiles": ["1c-kb-demo"]})
+    for tool in KB_MCP_TOOLS:
+        assert f"`{tool}`" in text
+    assert "1c-kb-demo" in text
+
+
+def test_mcp_rules_kb_detail_levels():
+    from packages.rules.mcp_rules import build_mcp_rules_section
+
+    text = build_mcp_rules_section({"searxng": False, "syntax_helper": False, "kb_profiles": ["1c-kb-demo"]})
+    assert 'detail="movements"' in text
+    assert 'detail="posting"' in text
+    assert "list_by_relation" in text
+    assert "find_references" in text
+
+
+def test_mcp_rules_kb_no_tools_when_disabled():
+    from packages.rules.mcp_rules import build_mcp_rules_section
+
+    text = build_mcp_rules_section({"searxng": False, "syntax_helper": False, "kb_profiles": []})
+    assert "search_project" not in text
+    assert "get_object" not in text
+    assert "не подключена" in text
+
+
+def test_mcp_rules_kb_deprecated_not_mentioned():
+    from packages.rules.mcp_rules import build_mcp_rules_section
+
+    text = build_mcp_rules_section({"searxng": False, "syntax_helper": False, "kb_profiles": ["1c-kb-demo"]})
+    assert "устаревшие" in text
+    idx = text.find("| Tool | Когда вызывать |")
+    idx_end = text.find("**Параметры ключевых tools:**")
+    table = text[idx:idx_end]
+    for deprecated in ("get_register_movements", "get_module_summary", "list_object_modules"):
+        assert deprecated not in table
+
+
 @pytest.mark.skipif(not EDT_FIXTURE.is_dir(), reason="EDT fixture missing")
 def test_analyze_edt_full_report(client):
     res = client.post(

@@ -170,7 +170,8 @@ project-kb-mcp/
 
 ## 7. MCP tools (`packages/kb/mcp_server/server.py`)
 
-**Поверхность: ровно 5 методов.**
+**Поверхность: ровно 5 методов.** Эти tools автоматически попадают в генерируемые правила Cursor через `packages/rules/mcp_rules.py` (§4 Rules).
+
 
 | Tool | Описание |
 |------|----------|
